@@ -1,0 +1,7 @@
+# Railway and Docker read these on Linux. A CRLF Procfile makes the start
+# command end in \r and fail with "command not found"; Python and config
+# files are normalised for the same reason.
+* text=auto eol=lf
+*.png binary
+*.jpg binary
+*.webp binary
