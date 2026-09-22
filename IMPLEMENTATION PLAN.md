@@ -130,6 +130,11 @@ Traced end to end. Every row is a hardcoded array; nothing is fetched.
 | Company socials | `Header.jsx` + `Footer.jsx` `SOCIAL` | `{icon, label, href}` | 4 and 5 — **they differ** |
 | Contact fields | `Contact.jsx` `FIELDS` | name, email, phone, city, country, message | 6 |
 | Stats | `About.jsx` `STATS` + `WhyChoose.jsx` | `{value, label}` | "5+" and "9" repeat in 5 places |
+| About heading | `About.jsx` JSX | 3 `MaskText` segments, middle one `<em>` | 1 |
+| About description | `About.jsx` JSX | paragraph | 1 |
+| About figure | `About.jsx` JSX | `/media/INTERVIEW.webp` 900x900 | 1 |
+| About caption | `About.jsx` JSX | "Visual Excellence, Tangible Results" — **also in the nav** | 1 |
+| Hero collage | `Hero.jsx` `SHEET` | `{id, slot, img, alt}` | 4 |
 | Ticker | `WhatWeOffer.jsx` `DISCIPLINES` | plain strings | 9 |
 
 **Contact submissions go nowhere.** `Contact.jsx:19-24`:
@@ -427,19 +432,79 @@ Exact files. **Data source only — no markup, layout, style or motion changes.*
 | `src/components/Clients.jsx` | `CLIENTS` ← content |
 | `src/components/Testimonials.jsx` | `QUOTES` ← content |
 | `src/components/WhatWeOffer.jsx` | `DISCIPLINES` ← derived from service titles, not a second list |
-| `src/components/About.jsx` | `STATS` values ← settings; `PILLARS` stay in code |
+| `src/components/About.jsx` | Heading, description, figure + caption, the 3 pillars' text, and the 4 stat values ← content. Pillar **count**, numbers, eyebrow, EdgeTitle and the grid stay in code |
 | `src/components/WhyChoose.jsx` | `stat` values ← settings; the 4 reasons stay in code |
 | `src/components/Contact.jsx` | **`deliver()` body only** (lines 19-24). Everything else in that file is untouched |
 | `src/components/Header.jsx` | `SOCIAL` ← content. `NAV` stays in code |
 | `src/components/Footer.jsx` | `SOCIAL` ← content; email and phone ← settings. `NAV` stays in code |
 | `src/components/Portfolio.jsx` | **No change.** It already reads `WORK` from `lib/work.js` |
-| `src/components/Hero.jsx` | Description paragraph ← settings. `LINES`, `SHEET`, `NOTES` stay in code |
+| `src/components/Hero.jsx` | **No change.** Home is static by decision — see the section scope below |
 
 **Never touched:** `MediaNestIntro.jsx`, `MediaLightbox.jsx`, `Magnetic.jsx`,
 all four primitives, every `.css` file, `App.jsx` section order, `main.jsx`.
 
 **Also to fix, unrelated to the backend:** `Testimonials.jsx:65` still carries
 `id="video"`, a leftover from the removed nav item. Nothing points at it.
+
+---
+
+## 12a. Section scope, as decided
+
+Walked section by section against the rendered page and the measured geometry,
+rather than inferred from the component source. Decisions taken so far:
+
+### Home — **static, no change**
+
+Decided: leave it exactly as it is. No `HeroImage` model, no `Hero.jsx` edit.
+
+It was the riskiest section to make dynamic anyway. Every other section
+reveals on `whileInView`; the Hero animates on **mount**, with staggered
+delays (headline words at 0.075s steps, the four collage frames at 0.12s
+steps with a `clipPath` reveal). Late content would animate empty boxes above
+the fold. Its headline is also split per word into individual masks, so a
+longer line breaks the three-line composition silently.
+
+**One consequence to accept:** `5+` and "Nine disciplines" appear in *both*
+Hero and About. About will read them from `SiteSettings`; Hero will not.
+Editing the figure in admin will change About and leave Hero at the old value —
+two different numbers on one page. Either accept that and remember to edit
+`Hero.jsx` too, or make that one value in Hero read from settings, which is a
+one-line change touching no markup, style or motion. **Open.**
+
+### About — dynamic, with the count fixed
+
+| Atom | Decision | Note |
+|---|---|---|
+| Heading | **Dynamic** | Stored as text with `*seen*` marking the `<em>`. Safe because this heading is three `MaskText` segments that flow and wrap, not the Hero's per-word split |
+| Description | **Dynamic** | Plain paragraph |
+| Figure image | **Dynamic** | Box measures 433x458 (ratio 0.95), `object-fit: cover`. Minimum upload **866 x 916** for 2x. Current source is 900x900 and only just clears it |
+| Figure `focal_x/y` | **Dynamic** | `object-position` is centred here, not hand-tuned as in the Hero, but a near-square crop still needs a focal point when a face sits off-centre |
+| Figure caption | **Settings** | "Visual Excellence, Tangible Results" is also the nav tagline — one source |
+| 3 pillars: title, body | **Dynamic** | |
+| 3 pillars: **count** | **Fixed at 3** | Add and delete disabled in admin |
+| Pillar numbers `01/02/03` | Computed | Array position, never stored |
+| 4 stat values | **Settings** | All four repeat elsewhere: `5+` in 5 places, `9` in 4, `24/7` and `Global` in Contact and Footer |
+| 4 stat labels | Static | Copy, not data |
+| Stat count | **Fixed at 4** | `grid-template-columns: repeat(4, 1fr)` |
+| Eyebrow, EdgeTitle | Static | |
+
+**Why the counts are fixed.** The bento is a 12-column grid and the figure
+occupies 4 columns across 2 rows, so the pillars have to tile what is left:
+
+```
+Row 1:  [figure 4] [pillar 4] [pillar 4]      = 12
+Row 2:  [figure  ] [pillar 8 wide      ]      = 12
+```
+
+Measured: 433 · 433 · 881. Three is not an arbitrary number — it is what
+fills the grid. Counts that tile without holes are 3, 4, 7, 8, 10, 11; five,
+six and nine leave empty cells. Rather than give an admin that arithmetic, the
+count is fixed and only the text is editable. The stats row is hardcoded to
+four columns for the same reason.
+
+**This revises an earlier call in this document.** §5 and §12 previously said
+the About pillars stay in code. Measuring the grid showed that only the
+*count* is load-bearing; the text is free to change.
 
 ---
 
@@ -454,7 +519,13 @@ SVG. These are implementation, not content.
 ### Becomes CMS media
 
 Service images (3) · Discipline covers (8) · Gallery images (7) · Team photos
-(2) · Client logos (8) · Testimonial photos (2). **30 files, ~2MB today.**
+(2) · Client logos (8) · Testimonial photos (2) · About figure (1).
+**31 files, ~2MB today.**
+
+The Hero's four collage images are **not** in this list: Home is static by
+decision (see the section scope below), so they stay in the repo. An earlier
+version of this document said 30 files and had omitted the About figure and
+the Hero collage entirely.
 
 ### Handling
 
@@ -686,7 +757,7 @@ retention policy, backups, monitoring, removal of the fallback constants.
 - **Option B — PaaS + S3-compatible object storage** (`django-storages`).
   *Media on a CDN, survives host migration, ~$1/month at this size.*
 - **Recommended: B**, because media is the one thing that must outlive the
-  backend host, and 30 files today becomes hundreds once galleries grow.
+  backend host, and 31 files today becomes hundreds once galleries grow.
 - **Impact:** Phase 0 settings; whether `Pillow` writes locally or to a bucket.
 
 **Gate 4 — Slugs and detail pages**
