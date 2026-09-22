@@ -1,0 +1,12 @@
+# Pinned to the majors in use; bump deliberately.
+Django==6.1.1
+djangorestframework==3.18.1
+django-cors-headers==4.9.0
+python-dotenv==1.2.3
+Pillow==12.3.0
+psycopg[binary]==3.3.6
+
+# Production serving. Railway runs the process itself and serves nothing
+# static for you, so both of these are required to deploy, not optional.
+gunicorn==26.2.0
+whitenoise==6.12.0
