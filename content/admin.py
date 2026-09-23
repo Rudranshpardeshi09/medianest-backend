@@ -16,11 +16,15 @@ from django.contrib import admin, messages
 from django.shortcuts import redirect
 from django.urls import reverse
 from django.utils.html import format_html
+from django.utils.safestring import mark_safe
 
 from .models import (
     SERVICE_STRIP_COLUMNS,
     AboutContent,
     AboutPillar,
+    Discipline,
+    DisciplineImage,
+    DisciplineVideo,
     Service,
     SiteSettings,
 )
@@ -194,6 +198,125 @@ class ServiceAdmin(admin.ModelAdmin):
                 f"{strip + SERVICE_STRIP_COLUMNS - strip % SERVICE_STRIP_COLUMNS} "
                 f"would fill it.",
                 level=messages.WARNING,
+            )
+        return super().changelist_view(request, extra_context)
+
+
+class DisciplineVideoInline(admin.TabularInline):
+    model = DisciplineVideo
+    extra = 0
+    fields = ("order", "youtube_id", "title")
+
+
+class DisciplineImageInline(admin.TabularInline):
+    model = DisciplineImage
+    extra = 0
+    fields = ("order", "image", "alt")
+
+
+@admin.register(Discipline)
+class DisciplineAdmin(admin.ModelAdmin):
+    list_display = ("slot_label", "name", "holds", "is_published", "order")
+    list_editable = ("order", "is_published")
+    ordering = ("order", "id")
+    inlines = [DisciplineVideoInline, DisciplineImageInline]
+
+    fieldsets = (
+        ("Tile", {"fields": ("name", "meta_label", ("order", "is_published"))}),
+        (
+            "Cover",
+            {
+                "fields": ("cover", "preview", ("focal_x", "focal_y")),
+                "description": (
+                    "Each grid slot is a different size, so how large this needs "
+                    "to be depends on where the tile sits. The preview says."
+                ),
+            },
+        ),
+    )
+    readonly_fields = ("preview",)
+
+    @admin.display(description="Slot")
+    def slot_label(self, obj):
+        """
+        Which of the eight grid positions this holds. Past the eighth a tile is
+        stored but not rendered, and saying so is kinder than letting someone
+        wonder why their new discipline never appeared.
+        """
+        s = obj.slot
+        if s:
+            w, h = Discipline.SLOT_SIZES[s - 1]
+            return format_html('{} <span style="color:#888">({}×{})</span>', s, w, h)
+        return mark_safe('<span style="color:#c93">not shown</span>')
+
+    @admin.display(description="Holds")
+    def holds(self, obj):
+        v, i = obj.videos.count(), obj.images.count()
+        if v and i:
+            return format_html('<span style="color:#c00">{} films + {} stills — pick one</span>', v, i)
+        if v:
+            return f"{v} film{'s' if v > 1 else ''}"
+        if i:
+            return f"{i} still{'s' if i > 1 else ''}"
+        return mark_safe('<span style="color:#c93">nothing yet</span>')
+
+    @admin.display(description="Cropped preview")
+    def preview(self, obj):
+        if not obj or not obj.cover:
+            return "Upload a cover to see how it will be cropped."
+        need = obj.required_size
+        if not need:
+            note = mark_safe(
+                '<p style="margin:6px 0 0;color:#c93">This tile sits past the eighth, '
+                'so it is not on the page. Move it up to show it.</p>'
+            )
+        elif obj.cover.width < need[0] or obj.cover.height < need[1]:
+            # State the shortfall rather than a flat "too small". Several of
+            # the original covers miss the 2x target by one or two percent,
+            # which nobody can see, and a warning that fires identically on
+            # those and on an image at half the size is one people learn to
+            # ignore.
+            short = max(
+                round((1 - obj.cover.width / need[0]) * 100),
+                round((1 - obj.cover.height / need[1]) * 100),
+            )
+            note = format_html(
+                '<p style="margin:6px 0 0;color:{}">This image is {}×{}. Slot {} wants '
+                '{}×{} to be sharp on a 2x screen, so it is {}% short.</p>',
+                "#c93" if short > 10 else "#666",
+                obj.cover.width, obj.cover.height, obj.slot, need[0], need[1], short,
+            )
+        else:
+            note = format_html('<p style="margin:6px 0 0;color:#484">Large enough for slot {}.</p>', obj.slot)
+        return format_html(
+            '<div style="width:240px;height:170px;overflow:hidden;border:1px solid #ccc">'
+            '<img src="{}" style="width:100%;height:100%;object-fit:cover;'
+            'object-position:{}% {}%"></div>{}',
+            obj.cover.url, obj.focal_x, obj.focal_y, note,
+        )
+
+    def changelist_view(self, request, extra_context=None):
+        published = Discipline.objects.filter(is_published=True).count()
+        if published < Discipline.VISIBLE_TILES:
+            self.message_user(
+                request,
+                f"The grid has {Discipline.VISIBLE_TILES} slots and {published} "
+                f"published tiles, so the last row will have gaps.",
+                level=messages.WARNING,
+            )
+        elif published > Discipline.VISIBLE_TILES:
+            self.message_user(
+                request,
+                f"{published} tiles are published but the grid shows the first "
+                f"{Discipline.VISIBLE_TILES}. Reorder to change which ones appear.",
+                level=messages.INFO,
+            )
+        mixed = [d.name for d in Discipline.objects.all() if d.videos.exists() and d.images.exists()]
+        if mixed:
+            self.message_user(
+                request,
+                f"A tile shows either films or stills, not both. Fix: {', '.join(mixed)}.",
+                level=messages.ERROR,
             )
         return super().changelist_view(request, extra_context)
 

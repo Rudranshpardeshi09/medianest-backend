@@ -9,6 +9,7 @@ Built so far: Site settings, About.
 """
 
 from django.core.exceptions import ValidationError
+from django.core.validators import RegexValidator
 from django.db import models
 
 
@@ -258,6 +259,132 @@ class Service(models.Model):
 # refusing to let someone record a discipline the firm genuinely offers, over
 # a layout nicety, is the wrong trade.
 SERVICE_STRIP_COLUMNS = 3
+
+
+class Discipline(models.Model):
+    """
+    A tile in the portfolio grid.
+
+    **The count is free, but only the first eight published tiles are shown.**
+    The grid is 12 columns and the eight tiles tessellate it exactly across
+    four rows -- 6+6, then 6+3+3, then 5+3+4, then the two tall ones carrying
+    into row four. A ninth tile would start a fifth row with eight empty
+    columns beside it, so the frontend takes the top eight by order and the
+    rest sit in the database unused until someone reorders them up.
+
+    That is why **there is no span field here**. A span belongs to a grid
+    position, not to a discipline: slot one is always 6x2 whoever occupies it.
+    The frontend holds the eight spans and applies them by position.
+
+    An earlier draft of the plan had span computed in `save()` from the cover's
+    dimensions. Measuring the rendered grid showed that is wrong -- slot one is
+    a 1.41 box holding a 1.00 image, slot two a 2.82 box holding a 2.00 image.
+    Spans do not follow the artwork; they follow the grid.
+
+    A tile holds **either** films **or** stills, never both -- which is how the
+    old site worked and how the lightbox reads today.
+    """
+
+    # Pixels each slot needs to stay sharp on a 2x screen, in grid order.
+    # Measured from the rendered tiles at a 1440 viewport.
+    SLOT_SIZES = [
+        (1326, 942),  # 1  6x2
+        (1326, 470),  # 2  6x1
+        (662, 470),   # 3  3x1
+        (662, 470),   # 4  3x1
+        (1104, 942),  # 5  5x2
+        (662, 942),   # 6  3x2
+        (882, 470),   # 7  4x1
+        (882, 470),   # 8  4x1
+    ]
+    VISIBLE_TILES = len(SLOT_SIZES)
+
+    name = models.CharField(max_length=80, help_text='The tile label, e.g. "Photography".')
+    meta_label = models.CharField(
+        max_length=40,
+        blank=True,
+        help_text='The small word above the name, e.g. "Stills", "Motion", "Broadcast".',
+    )
+    cover = models.ImageField(
+        upload_to="disciplines/",
+        blank=True,
+        help_text="The tile image. How large it needs to be depends on which slot it lands in.",
+    )
+    focal_x = models.PositiveSmallIntegerField(default=50, help_text="Horizontal focus, 0-100.")
+    focal_y = models.PositiveSmallIntegerField(default=50, help_text="Vertical focus, 0-100.")
+
+    is_published = models.BooleanField(default=True, db_index=True)
+    order = models.PositiveIntegerField(default=0, db_index=True)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["order", "id"]
+
+    def __str__(self):
+        return self.name
+
+    @property
+    def slot(self):
+        """Which grid position this occupies, or None if it falls past the eighth."""
+        ids = list(
+            Discipline.objects.filter(is_published=True).values_list("id", flat=True)[
+                : self.VISIBLE_TILES
+            ]
+        )
+        return ids.index(self.id) + 1 if self.id in ids else None
+
+    @property
+    def required_size(self):
+        s = self.slot
+        return self.SLOT_SIZES[s - 1] if s else None
+
+    def clean(self):
+        if self.focal_x > 100 or self.focal_y > 100:
+            raise ValidationError("Focal values are percentages and cannot exceed 100.")
+
+
+class DisciplineVideo(models.Model):
+    """A film behind a tile. Only the id is stored -- YouTube does the hosting."""
+
+    discipline = models.ForeignKey(Discipline, on_delete=models.CASCADE, related_name="videos")
+    youtube_id = models.CharField(
+        max_length=20,
+        validators=[
+            RegexValidator(
+                r"^[A-Za-z0-9_-]{11}$",
+                "A YouTube id is exactly 11 characters. Paste the id, not the whole URL.",
+            )
+        ],
+        help_text='The 11-character id from the URL: youtube.com/watch?v=<this>',
+    )
+    title = models.CharField(max_length=120)
+    order = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        ordering = ["order", "id"]
+
+    def __str__(self):
+        return f"{self.title} ({self.youtube_id})"
+
+
+class DisciplineImage(models.Model):
+    """A still behind a tile, for the disciplines that have no film."""
+
+    discipline = models.ForeignKey(Discipline, on_delete=models.CASCADE, related_name="images")
+    image = models.ImageField(upload_to="disciplines/gallery/")
+    alt = models.CharField(
+        max_length=200,
+        help_text="Required — it is read out to screen readers and shown if the image fails.",
+    )
+    order = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        ordering = ["order", "id"]
+
+    def __str__(self):
+        return f"{self.discipline.name} — {self.alt[:40]}"
 
 
 class AboutPillar(models.Model):

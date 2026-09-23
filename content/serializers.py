@@ -10,9 +10,10 @@ page derives something from position (the 01/02/03 labels), it is derived
 here too rather than stored, so the two can never disagree.
 """
 
+from django.utils.text import slugify
 from rest_framework import serializers
 
-from .models import AboutContent, AboutPillar, Service, SiteSettings
+from .models import AboutContent, AboutPillar, Discipline, Service, SiteSettings
 
 
 class SiteSettingsSerializer(serializers.ModelSerializer):
@@ -69,3 +70,54 @@ class ServiceSerializer(serializers.ModelSerializer):
         request = self.context.get("request")
         url = obj.image.url
         return request.build_absolute_uri(url) if request else url
+
+
+class DisciplineSerializer(serializers.ModelSerializer):
+    """
+    Shaped to match what the grid already renders, one tile at a time.
+
+    `media` folds films and stills into a single list because that is what the
+    lightbox steps through. A tile carries one kind or the other, so the two
+    querysets never interleave and no ordering question arises between them.
+
+    `span` is deliberately absent. It belongs to the grid position, not to the
+    discipline -- see the model docstring -- so the frontend keeps the eight
+    spans and applies them by position.
+    """
+
+    id = serializers.SerializerMethodField()
+    meta = serializers.CharField(source="meta_label", read_only=True)
+    img = serializers.SerializerMethodField()
+    media = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Discipline
+        fields = ["id", "name", "meta", "img", "focal_x", "focal_y", "media"]
+
+    def get_id(self, obj):
+        """
+        The anchor and React key. Derived from the name so it cannot drift
+        from what is on the tile, and so a renamed discipline does not keep a
+        stale slug pointing at it.
+        """
+        return slugify(obj.name)
+
+    def _url(self, field):
+        if not field:
+            return None
+        request = self.context.get("request")
+        return request.build_absolute_uri(field.url) if request else field.url
+
+    def get_img(self, obj):
+        return self._url(obj.cover)
+
+    def get_media(self, obj):
+        items = [
+            {"type": "video", "id": v.youtube_id, "title": v.title}
+            for v in obj.videos.all()
+        ]
+        items += [
+            {"type": "image", "src": self._url(i.image), "alt": i.alt}
+            for i in obj.images.all()
+        ]
+        return items

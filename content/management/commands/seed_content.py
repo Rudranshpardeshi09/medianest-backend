@@ -16,7 +16,15 @@ from django.conf import settings
 from django.core.files import File
 from django.core.management.base import BaseCommand
 
-from content.models import AboutContent, AboutPillar, Service, SiteSettings
+from content.models import (
+    AboutContent,
+    AboutPillar,
+    Discipline,
+    DisciplineImage,
+    DisciplineVideo,
+    Service,
+    SiteSettings,
+)
 
 # Copied from src/components/Services.jsx SERVICES.
 SERVICES = [
@@ -92,6 +100,53 @@ PILLARS = [
 
 ABOUT_FIGURE = "INTERVIEW.webp"
 
+# Copied from src/lib/work.js WORK, in grid order. A tile carries either
+# films or stills, never both.
+DISCIPLINES = [
+    {
+        "name": "Photography", "meta_label": "Stills", "cover": "photography.webp",
+        "images": [
+            ("gal-photography-1.webp", "Sports photography by Media Nest"),
+            ("gal-photography-2.webp", "Sports photography by Media Nest"),
+            ("gal-photography-3.webp", "Sports photography by Media Nest"),
+        ],
+    },
+    {
+        "name": "Cinematography", "meta_label": "Motion", "cover": "cinematography_main.webp",
+        "videos": [("Cldlv3d36Jc", "Cinematography")],
+    },
+    {
+        "name": "Interview", "meta_label": "Voice", "cover": "INTERVIEW.webp",
+        "videos": [("tz4CPFl_YfU", "Interviews")],
+    },
+    {
+        "name": "Live Stream", "meta_label": "Broadcast", "cover": "LIVE-STREAM.webp",
+        "videos": [("EDtsbsAljU8", "Live Stream")],
+    },
+    {
+        "name": "Event", "meta_label": "Coverage", "cover": "EVENT.webp",
+        "videos": [("fU1PKUO0FyI", "Event")],
+    },
+    {
+        "name": "Graphic Design", "meta_label": "Identity", "cover": "graphic-1.webp",
+        "images": [
+            ("gal-graphic-1.webp", "Graphic design work by Media Nest"),
+            ("gal-graphic-2.webp", "Graphic design work by Media Nest"),
+        ],
+    },
+    {
+        "name": "Video Edit", "meta_label": "Post", "cover": "video-edit.webp",
+        "videos": [("wGwSSFfbcEs", "Football Teaser"), ("kvHo80ZIUxU", "Hockey Teaser")],
+    },
+    {
+        "name": "Digital Marketing", "meta_label": "Reach", "cover": "new_DIGITAL-MARKETING.webp",
+        "images": [
+            ("gal-digital-1.webp", "Digital marketing work by Media Nest"),
+            ("gal-digital-2.webp", "Digital marketing work by Media Nest"),
+        ],
+    },
+]
+
 
 class Command(BaseCommand):
     help = "Seed the database with the content the frontend currently hardcodes."
@@ -121,6 +176,7 @@ class Command(BaseCommand):
         self._seed_about(force, media_dir)
         self._seed_pillars(force)
         self._seed_services(force, media_dir)
+        self._seed_disciplines(force, media_dir)
 
         self.stdout.write(self.style.SUCCESS("\nSeed complete."))
 
@@ -204,6 +260,58 @@ class Command(BaseCommand):
 
         self.stdout.write(
             f"  services        : {len(SERVICES)} featured + {len(SERVICE_STRIP)} in the strip"
+        )
+        if missing:
+            self.stdout.write(
+                self.style.WARNING(f"                    images not found: {', '.join(missing)}")
+            )
+
+    def _seed_disciplines(self, force, media_dir):
+        if Discipline.objects.exists() and not force:
+            self.stdout.write(
+                f"  disciplines     : {Discipline.objects.count()} already present, left alone"
+            )
+            return
+        Discipline.objects.all().delete()
+
+        missing = []
+        films = stills = 0
+        for i, data in enumerate(DISCIPLINES):
+            tile = Discipline(
+                name=data["name"],
+                meta_label=data["meta_label"],
+                order=i,
+                is_published=True,
+            )
+            source = media_dir / data["cover"]
+            if source.exists():
+                with source.open("rb") as fh:
+                    tile.cover.save(data["cover"], File(fh), save=False)
+            else:
+                missing.append(data["cover"])
+            tile.save()
+
+            for j, (youtube_id, title) in enumerate(data.get("videos", [])):
+                DisciplineVideo.objects.create(
+                    discipline=tile, youtube_id=youtube_id, title=title, order=j
+                )
+                films += 1
+
+            for j, (filename, alt) in enumerate(data.get("images", [])):
+                shot = DisciplineImage(discipline=tile, alt=alt, order=j)
+                source = media_dir / filename
+                if source.exists():
+                    with source.open("rb") as fh:
+                        shot.image.save(filename, File(fh), save=False)
+                    shot.save()
+                    stills += 1
+                else:
+                    missing.append(filename)
+
+        shown = min(len(DISCIPLINES), Discipline.VISIBLE_TILES)
+        self.stdout.write(
+            f"  disciplines     : {len(DISCIPLINES)} tiles ({shown} on the page) "
+            f"holding {films} films + {stills} stills"
         )
         if missing:
             self.stdout.write(

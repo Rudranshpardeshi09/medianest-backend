@@ -16,8 +16,13 @@ from django.utils.http import http_date
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
 
-from .models import AboutContent, AboutPillar, Service, SiteSettings
-from .serializers import AboutContentSerializer, ServiceSerializer, SiteSettingsSerializer
+from .models import AboutContent, AboutPillar, Discipline, Service, SiteSettings
+from .serializers import (
+    AboutContentSerializer,
+    DisciplineSerializer,
+    ServiceSerializer,
+    SiteSettingsSerializer,
+)
 
 
 def _last_modified():
@@ -27,7 +32,7 @@ def _last_modified():
         obj = model.objects.first()
         if obj:
             stamps.append(obj.updated_at)
-    for model in (AboutPillar, Service):
+    for model in (AboutPillar, Service, Discipline):
         obj = model.objects.order_by("-updated_at").first()
         if obj:
             stamps.append(obj.updated_at)
@@ -40,6 +45,9 @@ def content(request):
     about = AboutContent.load()
 
     services = Service.objects.filter(is_published=True)
+    disciplines = Discipline.objects.filter(is_published=True).prefetch_related(
+        "videos", "images"
+    )
     ctx = {"request": request}
 
     payload = {
@@ -52,6 +60,12 @@ def content(request):
         ).data,
         "service_strip": ServiceSerializer(
             services.filter(is_featured=False), many=True, context=ctx
+        ).data,
+        # Only the first eight published tiles. A ninth would start a fifth
+        # grid row with eight empty columns beside it, so the cut happens here
+        # rather than leaving the frontend to slice a list it did not size.
+        "disciplines": DisciplineSerializer(
+            disciplines[: Discipline.VISIBLE_TILES], many=True, context=ctx
         ).data,
     }
 
