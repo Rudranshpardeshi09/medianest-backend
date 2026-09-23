@@ -16,7 +16,8 @@ from .settings.base import env
 urlpatterns = [
     path(f"{env('DJANGO_ADMIN_PATH', 'admin')}/", admin.site.urls),
     path("api/", include("core.urls")),
-    # Phase 1 adds enquiries.urls, Phase 2 adds content.urls
+    path("api/", include("content.urls")),
+    # Phase 1 adds enquiries.urls
 ]
 
 if settings.DEBUG:

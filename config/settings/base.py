@@ -1,4 +1,4 @@
-"""
+﻿"""
 Settings shared by every environment.
 
 Everything that differs between a laptop and production is read from the
@@ -37,7 +37,7 @@ def env_list(name, default=""):
     return [item.strip() for item in raw.split(",") if item.strip()]
 
 
-# ── Core ─────────────────────────────────────────────────────────────
+# â”€â”€ Core â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 # Dev supplies an obviously-insecure fallback; prod.py requires a real one.
 SECRET_KEY = env("DJANGO_SECRET_KEY", "insecure-dev-key-change-me")
 DEBUG = env_bool("DJANGO_DEBUG", False)
@@ -59,7 +59,8 @@ INSTALLED_APPS = [
     "corsheaders",
     # local
     "core",
-    # Phase 1 adds "enquiries", Phase 2 adds "content"
+    "content",
+    # Phase 1 adds "enquiries"
 ]
 
 MIDDLEWARE = [
@@ -95,7 +96,7 @@ TEMPLATES = [
 ]
 
 
-# ── Database ─────────────────────────────────────────────────────────
+# â”€â”€ Database â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 # DATABASE_URL drives everything. Unset falls back to SQLite so the project
 # boots on a fresh clone with nothing running; docker-compose.yml brings up
 # the Postgres this is meant to run on.
@@ -133,14 +134,14 @@ AUTH_PASSWORD_VALIDATORS = [
 ]
 
 
-# ── i18n ─────────────────────────────────────────────────────────────
+# â”€â”€ i18n â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 LANGUAGE_CODE = "en-us"
 TIME_ZONE = env("DJANGO_TIME_ZONE", "Asia/Kolkata")
 USE_I18N = True
 USE_TZ = True
 
 
-# ── Static and media ─────────────────────────────────────────────────
+# â”€â”€ Static and media â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 # Static here is Django admin's own assets only; the website's assets ship
 # with the Vite build. MEDIA is CMS uploads: service images, covers,
 # galleries, team photos, client logos, testimonial photos.
@@ -163,7 +164,7 @@ DATA_UPLOAD_MAX_MEMORY_SIZE = 5 * 1024 * 1024
 FILE_UPLOAD_MAX_MEMORY_SIZE = 5 * 1024 * 1024
 
 
-# ── DRF ──────────────────────────────────────────────────────────────
+# â”€â”€ DRF â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 # Read-only public content plus one throttled write endpoint. No auth on the
 # public API; the admin is the only authenticated surface.
 REST_FRAMEWORK = {
@@ -174,7 +175,7 @@ REST_FRAMEWORK = {
 }
 
 
-# ── CORS ─────────────────────────────────────────────────────────────
+# â”€â”€ CORS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 # Explicit origins only. The contact endpoint sends no credentials, so
 # CORS_ALLOW_CREDENTIALS stays off.
 CORS_ALLOWED_ORIGINS = env_list("CORS_ALLOWED_ORIGINS", "http://localhost:5173")
@@ -182,7 +183,7 @@ CORS_ALLOWED_ORIGIN_REGEXES = env_list("CORS_ALLOWED_ORIGIN_REGEXES")
 CORS_ALLOW_CREDENTIALS = False
 
 
-# ── Email ────────────────────────────────────────────────────────────
+# â”€â”€ Email â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 # Phase 1 sends the enquiry notification. Console backend until real SMTP
 # credentials exist, so a missing mail server never blocks development.
 EMAIL_BACKEND = env("DJANGO_EMAIL_BACKEND", "django.core.mail.backends.console.EmailBackend")
