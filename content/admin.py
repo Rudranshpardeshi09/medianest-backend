@@ -12,6 +12,8 @@ Two habits run through it:
     than relying on a note nobody reads.
 """
 
+import re
+
 from django.contrib import admin, messages
 from django.shortcuts import redirect
 from django.urls import reverse
@@ -19,15 +21,43 @@ from django.utils.html import format_html
 from django.utils.safestring import mark_safe
 
 from .models import (
+    MAX_COMFORTABLE_REASONS,
+    Person,
+    PersonLine,
+    PersonSocial,
+    TeamContent,
     SERVICE_STRIP_COLUMNS,
     AboutContent,
     AboutPillar,
     Discipline,
     DisciplineImage,
     DisciplineVideo,
+    Reason,
     Service,
     SiteSettings,
+    WhyChooseContent,
+    number_word,
 )
+
+
+def _rendered_heading(heading, count, noun):
+    """
+    A heading as the page will print it: {count} filled in and the accented
+    span set in the orange italic.
+
+    Both `{count}` headings show this. Without it the admin edits a string
+    with a placeholder in it and has to picture the result, which is exactly
+    the kind of guessing the placeholder was meant to remove.
+    """
+    text = heading.replace("{count}", number_word(count))
+    head, accent, tail = text, "", ""
+    if text.count("*") == 2:
+        head, accent, tail = re.split(r"\*(.+?)\*", text, maxsplit=1)
+    return format_html(
+        '<p style="font-size:17px;margin:0">{}<em style="color:#e95523">{}</em>{}</p>'
+        '<p style="margin:6px 0 0;color:#666">With {} published {}.</p>',
+        head, accent, tail, count, noun,
+    )
 
 
 class SingletonAdmin(admin.ModelAdmin):
@@ -343,3 +373,204 @@ class AboutPillarAdmin(admin.ModelAdmin):
 
     def has_delete_permission(self, request, obj=None):
         return False
+
+
+@admin.register(WhyChooseContent)
+class WhyChooseContentAdmin(SingletonAdmin):
+    fields = ("heading", "rendered")
+    readonly_fields = ("rendered", "updated_at")
+
+    @admin.display(description="As the page will read it")
+    def rendered(self, obj):
+        if not obj:
+            return "—"
+        return _rendered_heading(
+            obj.heading, Reason.objects.filter(is_published=True).count(), "reasons"
+        )
+
+
+@admin.register(Reason)
+class ReasonAdmin(admin.ModelAdmin):
+    list_display = ("position", "label", "length", "is_published", "order")
+    list_editable = ("order", "is_published")
+    list_filter = ("is_published",)
+    search_fields = ("label", "body")
+    ordering = ("order", "id")
+
+    fieldsets = (
+        (
+            None,
+            {
+                "fields": ("label", "body", ("order", "is_published")),
+                "description": (
+                    "Add or remove reasons freely — they stack rather than tile, "
+                    "so the layout does not break. The heading writes the count "
+                    "out itself and the section grows to keep the pace."
+                ),
+            },
+        ),
+    )
+
+    @admin.display(description="#")
+    def position(self, obj):
+        """The 01/02/03 the page shows. Derived, never stored."""
+        ids = list(Reason.objects.filter(is_published=True).values_list("id", flat=True))
+        return f"{ids.index(obj.id) + 1:02d}" if obj.id in ids else "--"
+
+    @admin.display(description="Length")
+    def length(self, obj):
+        """
+        How close each field is to the limit. The limits are the panel's real
+        measurements, so "near" here means the composition is about to move.
+        """
+        parts = []
+        for name, used, cap in (
+            ("label", len(obj.label), Reason.LABEL_LIMIT),
+            ("copy", len(obj.body), Reason.BODY_LIMIT),
+        ):
+            colour = "#c00" if used > cap else "#c93" if used > cap * 0.9 else "#666"
+            parts.append(f'<span style="color:{colour}">{name} {used}/{cap}</span>')
+        return mark_safe(" · ".join(parts))
+
+    def changelist_view(self, request, extra_context=None):
+        n = Reason.objects.filter(is_published=True).count()
+        if n < 2:
+            self.message_user(
+                request,
+                f"{n} published reason{'s' if n != 1 else ''}. The section scrubs "
+                f"one reason into the next as you scroll, so it needs at least two "
+                f"to have anything to do.",
+                level=messages.WARNING,
+            )
+        elif n > MAX_COMFORTABLE_REASONS:
+            self.message_user(
+                request,
+                f"{n} published reasons. The list in the left margin is only as "
+                f"tall as the pinned stage, and past {MAX_COMFORTABLE_REASONS} "
+                f"rows it is cut off on a short laptop screen. The section also "
+                f"grows 35vh per reason — this one is now "
+                f"{100 + n * 35}vh of scroll.",
+                level=messages.WARNING,
+            )
+        return super().changelist_view(request, extra_context)
+
+
+@admin.register(TeamContent)
+class TeamContentAdmin(SingletonAdmin):
+    fields = ("heading", "rendered")
+    readonly_fields = ("rendered", "updated_at")
+
+    @admin.display(description="As the page will read it")
+    def rendered(self, obj):
+        if not obj:
+            return "—"
+        n = Person.objects.filter(is_published=True).count()
+        return _rendered_heading(obj.heading, n, "people")
+
+
+class PersonLineInline(admin.TabularInline):
+    model = PersonLine
+    extra = 0
+    fields = ("order", "text")
+
+
+class PersonSocialInline(admin.TabularInline):
+    model = PersonSocial
+    extra = 0
+    fields = ("order", "platform", "url")
+
+
+@admin.register(Person)
+class PersonAdmin(admin.ModelAdmin):
+    list_display = ("position", "__str__", "role", "holds", "is_published", "order")
+    list_editable = ("order", "is_published")
+    list_filter = ("is_published",)
+    search_fields = ("first_name", "last_name", "role")
+    ordering = ("order", "id")
+    inlines = [PersonLineInline, PersonSocialInline]
+
+    fieldsets = (
+        (
+            "Name",
+            {
+                "fields": (("first_name", "last_name"), "role"),
+                "description": "The surname is set in the orange italic beneath the given name.",
+            },
+        ),
+        ("Listing", {"fields": (("order", "is_published"),)}),
+        (
+            "Portrait",
+            {
+                "fields": ("photo", "preview", ("focal_x", "focal_y")),
+                "description": (
+                    "Cropped to 3:4 and filled, so a wider or taller photo loses "
+                    "its edges. Move the focal point if the crop cuts the face."
+                ),
+            },
+        ),
+    )
+    readonly_fields = ("preview",)
+
+    @admin.display(description="#")
+    def position(self, obj):
+        """The 01/02 in the margin. Derived, never stored."""
+        ids = list(Person.objects.filter(is_published=True).values_list("id", flat=True))
+        return f"{ids.index(obj.id) + 1:02d}" if obj.id in ids else "--"
+
+    @admin.display(description="Holds")
+    def holds(self, obj):
+        lines, social = obj.lines.count(), obj.social.count()
+        bits = [f"{lines} line{'s' if lines != 1 else ''}"]
+        if social:
+            bits.append(f"{social} link{'s' if social != 1 else ''}")
+        else:
+            bits.append('<span style="color:#c93">no links</span>')
+        return mark_safe(" · ".join(bits))
+
+    @admin.display(description="Cropped preview")
+    def preview(self, obj):
+        if not obj or not obj.photo:
+            return "Upload a portrait to see how it will be cropped."
+        need = Person.PHOTO_SIZE
+        if obj.photo.width < need[0] or obj.photo.height < need[1]:
+            short = max(
+                round((1 - obj.photo.width / need[0]) * 100),
+                round((1 - obj.photo.height / need[1]) * 100),
+            )
+            note = format_html(
+                '<p style="margin:6px 0 0;color:{}">This photo is {}×{}. The frame '
+                'wants {}×{} to be sharp on a phone or a retina screen, so it is '
+                '{}% short and will be stretched.</p>',
+                "#c93" if short > 10 else "#666",
+                obj.photo.width, obj.photo.height, need[0], need[1], short,
+            )
+        else:
+            note = mark_safe('<p style="margin:6px 0 0;color:#484">Large enough for the frame.</p>')
+        return format_html(
+            '<div style="width:230px;height:307px;overflow:hidden;border:1px solid #ccc">'
+            '<img src="{}" style="width:100%;height:100%;object-fit:cover;'
+            'object-position:{}% {}%"></div>'
+            '<p style="margin:6px 0 0;color:#666">Half the real size (460×613).</p>{}',
+            obj.photo.url, obj.focal_x, obj.focal_y, note,
+        )
+
+    def changelist_view(self, request, extra_context=None):
+        published = Person.objects.filter(is_published=True)
+        if not published.exists():
+            self.message_user(
+                request,
+                "No published people, so the section renders a heading and nothing else.",
+                level=messages.WARNING,
+            )
+        # A published person with no portrait leaves an empty frame on the
+        # page. The frame keeps its shape so nothing breaks, but the row is
+        # half blank and that is worth saying out loud.
+        photoless = [str(p) for p in published if not p.photo]
+        if photoless:
+            self.message_user(
+                request,
+                f"No portrait uploaded for {', '.join(photoless)}, so the frame "
+                f"beside the name is empty on the page.",
+                level=messages.WARNING,
+            )
+        return super().changelist_view(request, extra_context)

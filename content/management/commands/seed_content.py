@@ -22,8 +22,14 @@ from content.models import (
     Discipline,
     DisciplineImage,
     DisciplineVideo,
+    Person,
+    PersonLine,
+    PersonSocial,
+    Reason,
     Service,
     SiteSettings,
+    TeamContent,
+    WhyChooseContent,
 )
 
 # Copied from src/components/Services.jsx SERVICES.
@@ -99,6 +105,75 @@ PILLARS = [
 ]
 
 ABOUT_FIGURE = "INTERVIEW.webp"
+
+# Copied from src/components/WhyChoose.jsx REASONS. The figures each reason
+# used to carry are deliberately absent -- see the Reason model docstring.
+REASONS = [
+    {
+        "label": "Proven Expertise",
+        "body": (
+            "A team of experts with over 5+ years of hands-on experience in "
+            "brand image management."
+        ),
+    },
+    {
+        "label": "Comprehensive Services",
+        "body": (
+            "From strategy to execution, we provide a full suite of services "
+            "designed to enhance your brand visibility."
+        ),
+    },
+    {
+        "label": "Industry Networking",
+        "body": (
+            "With our robust network of industry contacts, we offer unique "
+            "opportunities for collaboration and growth."
+        ),
+    },
+    {
+        "label": "Client-Centric Approach",
+        "body": (
+            "We tailor our services to the specific needs of each client, "
+            "ensuring every project is personalized and effective."
+        ),
+    },
+]
+
+# Copied from src/components/Team.jsx FOUNDERS. The icon classes are not
+# carried over -- the platform key is stored and the frontend owns the class.
+#
+# Both photos are 375x560 against a frame that renders 460x613 and wants
+# 920x1226 on a 2x screen, so they are already being upscaled on the live
+# site. Seeded as they are, deliberately: the page must not change. The
+# admin's crop preview says how short each one is.
+PEOPLE = [
+    {
+        "first_name": "Aditi",
+        "last_name": "Singh",
+        "role": "Managing Partner",
+        "photo": "ADITI-MAM-1.webp",
+        "lines": ["Still Life & Sports Photographer", "Artist & Poet"],
+        "social": [
+            ("instagram", "https://www.instagram.com/aditisinghphotography"),
+            ("youtube", "https://youtube.com/@aditisinghphotography"),
+        ],
+    },
+    {
+        "first_name": "Vivek",
+        "last_name": "Pathak",
+        "role": "Managing Partner",
+        "photo": "VIVEK-SIR-2.webp",
+        "lines": [
+            "Former Athlete",
+            "Sports Administrator",
+            "Sports & Profiling Photographer",
+        ],
+        "social": [
+            ("instagram", "https://www.instagram.com/pafcoms"),
+            ("linkedin", "https://www.linkedin.com/in/vivek-pathak-5257312a"),
+        ],
+    },
+]
 
 # Copied from src/lib/work.js WORK, in grid order. A tile carries either
 # films or stills, never both.
@@ -177,6 +252,8 @@ class Command(BaseCommand):
         self._seed_pillars(force)
         self._seed_services(force, media_dir)
         self._seed_disciplines(force, media_dir)
+        self._seed_reasons(force)
+        self._seed_people(force, media_dir)
 
         self.stdout.write(self.style.SUCCESS("\nSeed complete."))
 
@@ -316,4 +393,52 @@ class Command(BaseCommand):
         if missing:
             self.stdout.write(
                 self.style.WARNING(f"                    images not found: {', '.join(missing)}")
+            )
+
+    def _seed_reasons(self, force):
+        if Reason.objects.exists() and not force:
+            self.stdout.write(
+                f"  reasons         : {Reason.objects.count()} already present, left alone"
+            )
+            return
+        Reason.objects.all().delete()
+        for i, data in enumerate(REASONS):
+            Reason.objects.create(order=i, **data)
+        WhyChooseContent.load()  # default heading carries {count}
+        self.stdout.write(f"  reasons         : {len(REASONS)} created")
+
+    def _seed_people(self, force, media_dir):
+        if Person.objects.exists() and not force:
+            self.stdout.write(
+                f"  people          : {Person.objects.count()} already present, left alone"
+            )
+            return
+        Person.objects.all().delete()
+
+        missing = []
+        for i, data in enumerate(PEOPLE):
+            person = Person(
+                first_name=data["first_name"],
+                last_name=data["last_name"],
+                role=data["role"],
+                order=i,
+            )
+            source = media_dir / data["photo"]
+            if source.exists():
+                with source.open("rb") as fh:
+                    person.photo.save(data["photo"], File(fh), save=False)
+            else:
+                missing.append(data["photo"])
+            person.save()
+
+            for j, text in enumerate(data["lines"]):
+                PersonLine.objects.create(person=person, text=text, order=j)
+            for j, (platform, url) in enumerate(data["social"]):
+                PersonSocial.objects.create(person=person, platform=platform, url=url, order=j)
+
+        TeamContent.load()
+        self.stdout.write(f"  people          : {len(PEOPLE)} created")
+        if missing:
+            self.stdout.write(
+                self.style.WARNING(f"                    photos not found: {', '.join(missing)}")
             )

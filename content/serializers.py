@@ -13,7 +13,16 @@ here too rather than stored, so the two can never disagree.
 from django.utils.text import slugify
 from rest_framework import serializers
 
-from .models import AboutContent, AboutPillar, Discipline, Service, SiteSettings
+from .models import (
+    AboutContent,
+    AboutPillar,
+    Discipline,
+    Person,
+    Reason,
+    Service,
+    SiteSettings,
+    number_word,
+)
 
 
 class SiteSettingsSerializer(serializers.ModelSerializer):
@@ -121,3 +130,75 @@ class DisciplineSerializer(serializers.ModelSerializer):
             for i in obj.images.all()
         ]
         return items
+
+
+class ReasonSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Reason
+        fields = ["label", "body"]
+
+
+class WhyChooseSerializer(serializers.Serializer):
+    """
+    The heading and its reasons.
+
+    `{count}` is resolved here rather than in the browser. The word list has
+    to live somewhere, and a copy in the frontend beside a copy in the admin
+    preview is two things to keep in step for no gain -- the page has the
+    reasons either way, so it can be handed a finished sentence.
+    """
+
+    heading = serializers.SerializerMethodField()
+    reasons = serializers.SerializerMethodField()
+
+    def get_heading(self, obj):
+        return obj["content"].heading.replace("{count}", number_word(len(obj["reasons"])))
+
+    def get_reasons(self, obj):
+        return ReasonSerializer(obj["reasons"], many=True).data
+
+
+class PersonSerializer(serializers.ModelSerializer):
+    """
+    One partner, shaped as the section renders them.
+
+    `platform` is sent as the stored key -- "instagram" -- not as an icon
+    class. The class belongs beside the icon font that defines it, which is in
+    the frontend; sending `fab fa-instagram` from Django would put a second
+    copy of the frontend's icon library in the API.
+    """
+
+    photo = serializers.SerializerMethodField()
+    lines = serializers.SerializerMethodField()
+    social = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Person
+        fields = [
+            "first_name", "last_name", "role",
+            "photo", "focal_x", "focal_y",
+            "lines", "social",
+        ]
+
+    def get_photo(self, obj):
+        if not obj.photo:
+            return None
+        request = self.context.get("request")
+        return request.build_absolute_uri(obj.photo.url) if request else obj.photo.url
+
+    def get_lines(self, obj):
+        return [line.text for line in obj.lines.all()]
+
+    def get_social(self, obj):
+        return [{"platform": s.platform, "url": s.url} for s in obj.social.all()]
+
+
+class TeamSerializer(serializers.Serializer):
+    heading = serializers.SerializerMethodField()
+    people = serializers.SerializerMethodField()
+
+    def get_heading(self, obj):
+        return obj["content"].heading.replace("{count}", number_word(len(obj["people"])))
+
+    def get_people(self, obj):
+        return PersonSerializer(obj["people"], many=True, context=self.context).data

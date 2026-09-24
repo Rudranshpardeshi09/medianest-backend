@@ -9,7 +9,7 @@ Built so far: Site settings, About.
 """
 
 from django.core.exceptions import ValidationError
-from django.core.validators import RegexValidator
+from django.core.validators import MaxLengthValidator, RegexValidator
 from django.db import models
 
 
@@ -321,6 +321,12 @@ class Discipline(models.Model):
 
     class Meta:
         ordering = ["order", "id"]
+        # Named for where it is on the page, not for what the code calls it.
+        # "Disciplines" told an editor nothing about which section it edits;
+        # the nav reads Projects while these tiles are on screen and the
+        # section's own eyebrow reads Selected work.
+        verbose_name = "projects_selected_work"
+        verbose_name_plural = "projects_selected_work"
 
     def __str__(self):
         return self.name
@@ -364,6 +370,8 @@ class DisciplineVideo(models.Model):
 
     class Meta:
         ordering = ["order", "id"]
+        verbose_name = "film"
+        verbose_name_plural = "films"
 
     def __str__(self):
         return f"{self.title} ({self.youtube_id})"
@@ -382,6 +390,8 @@ class DisciplineImage(models.Model):
 
     class Meta:
         ordering = ["order", "id"]
+        verbose_name = "still"
+        verbose_name_plural = "stills"
 
     def __str__(self):
         return f"{self.discipline.name} — {self.alt[:40]}"
@@ -425,3 +435,297 @@ class AboutPillar(models.Model):
 
     def __str__(self):
         return self.title
+
+
+# Where the left margin's list starts being clipped by the pinned stage.
+# Measured by cloning rows into the real rail at five viewports: 13 fit at
+# 1024x640, the shortest screen the section still pins on, and more than that
+# everywhere taller. Twelve leaves one row of margin.
+#
+# Nothing else caps the count -- the panels stack rather than tile, and the
+# section's height grows with them so the pacing holds. It does grow a lot:
+# each reason adds 35vh, so eight of them make the section 380vh of scroll.
+# That is an editorial call, not a break, so it is not warned about.
+MAX_COMFORTABLE_REASONS = 12
+
+_NUMBER_WORDS = {
+    1: "One", 2: "Two", 3: "Three", 4: "Four", 5: "Five", 6: "Six",
+    7: "Seven", 8: "Eight", 9: "Nine", 10: "Ten", 11: "Eleven", 12: "Twelve",
+}
+
+
+def number_word(n):
+    """
+    Spell a small number, so the heading can say "Four reasons" rather than
+    "4 reasons". Falls back to the digits past twelve, which is well beyond
+    anything this section would hold.
+    """
+    return _NUMBER_WORDS.get(n, str(n))
+
+
+class WhyChooseContent(Singleton):
+    """
+    The framing line above the reasons.
+
+    The heading carries a `{count}` placeholder rather than a written-out
+    number. It reads "Four reasons brands stay." today, and the word "Four"
+    is not stored anywhere -- the frontend spells the reason count. A stored
+    "Four" beside an editable list is the same trap the figures were: add a
+    fifth reason and the heading goes on claiming four.
+
+    `*asterisks*` mark the accented span, exactly as AboutContent does.
+    """
+
+    heading = models.CharField(
+        max_length=120,
+        default="{count} reasons brands *stay*.",
+        help_text=(
+            "Use {count} where the number of reasons should go — it is written "
+            "out as a word (Four, Five) and updates itself when reasons are "
+            "added or removed. Put *asterisks* around the one accented word."
+        ),
+    )
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "projects_why_choose_us_heading"
+        verbose_name_plural = "projects_why_choose_us_heading"
+
+    def __str__(self):
+        return self.heading
+
+    def clean(self):
+        super().clean()
+        if self.heading.count("*") not in (0, 2):
+            raise ValidationError(
+                {"heading": "Accent marks come in pairs: *one word* between two asterisks."}
+            )
+        if "{count}" not in self.heading:
+            raise ValidationError(
+                {
+                    "heading": (
+                        "Leave {count} in the heading. Without it the number of "
+                        "reasons is written by hand and goes stale the moment one "
+                        "is added."
+                    )
+                }
+            )
+
+
+class Reason(models.Model):
+    """
+    One reason in the Why Choose Us section.
+
+    **The count is free.** Unlike the About pillars, the reasons do not tile a
+    grid -- all of them stack in one box and only the one on show is opaque --
+    so a fifth does not leave a hole. Two things follow the count instead of
+    constraining it: the heading writes the number out itself, and the
+    section's scroll height is computed from it so the panels keep turning
+    over at the pace they do now rather than sharing a fixed travel.
+
+    The 01/02/03 labels are not stored. They are the row's position, and a
+    stored number goes stale the moment the order changes.
+
+    Neither is a figure. Each reason used to carry one -- 5+ years, nine
+    disciplines -- and every one of them was a number About states too, under
+    the same label, so the two sections could contradict each other on one
+    screen. A number that belongs in a sentence is now written in the
+    sentence, and edited as a sentence.
+    """
+
+    # Measured on the rendered panel, at the widths where the section pins.
+    # The label has to hold one line, and the copy has to fit the box the foot
+    # rule sits under, or the composition moves as the reader scrolls.
+    LABEL_LIMIT = 25
+    BODY_LIMIT = 170
+
+    label = models.CharField(
+        max_length=LABEL_LIMIT,
+        help_text=(
+            f"Set at display size, and it has to stay on one line — "
+            f"{LABEL_LIMIT} characters is what fits."
+        ),
+    )
+    body = models.TextField(
+        max_length=BODY_LIMIT,
+        # A TextField's max_length only sizes the admin's textarea -- unlike a
+        # CharField it is enforced neither by validation nor by the database,
+        # so on its own it is a suggestion. The validator is what actually
+        # keeps a 400-character paragraph out of a box measured for 170.
+        validators=[MaxLengthValidator(BODY_LIMIT)],
+        help_text=(
+            f"Up to {BODY_LIMIT} characters. Past that the copy pushes the "
+            f"rule below it and the section shifts as you scroll."
+        ),
+    )
+
+    is_published = models.BooleanField(default=True, db_index=True)
+    order = models.PositiveIntegerField(default=0, db_index=True)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["order", "id"]
+        verbose_name = "projects_why_choose_us"
+        verbose_name_plural = "projects_why_choose_us"
+
+    def __str__(self):
+        return self.label
+
+
+class TeamContent(Singleton):
+    """
+    The framing line above the founders.
+
+    Same `{count}` placeholder as the Why Choose heading, for the same reason:
+    the line reads "Two photographers running a practice." and the word "Two"
+    is spelled from the number of published people rather than stored. A third
+    partner would otherwise leave the heading insisting there are two.
+    """
+
+    heading = models.CharField(
+        max_length=140,
+        default="{count} photographers running a *practice*.",
+        help_text=(
+            "Use {count} where the number of people should go — it is written "
+            "out as a word (Two, Three) and updates itself. Put *asterisks* "
+            "around the one accented word."
+        ),
+    )
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "team_the_partners_heading"
+        verbose_name_plural = "team_the_partners_heading"
+
+    def __str__(self):
+        return self.heading
+
+    def clean(self):
+        super().clean()
+        if self.heading.count("*") not in (0, 2):
+            raise ValidationError(
+                {"heading": "Accent marks come in pairs: *one word* between two asterisks."}
+            )
+        if "{count}" not in self.heading:
+            raise ValidationError(
+                {
+                    "heading": (
+                        "Leave {count} in the heading. Without it the number of "
+                        "people is written by hand and goes stale the moment one "
+                        "is added."
+                    )
+                }
+            )
+
+
+class Person(models.Model):
+    """
+    One of the partners.
+
+    **The count is free.** The list is a flex column, not a grid, and the
+    left/right flip is decided by row position, so a third person simply adds
+    a row mirrored the other way. The heading follows the count; nothing else
+    has to.
+
+    The name is two fields because the page sets the surname in italic beside
+    the given name -- it is a composition, not a string. One field would mean
+    teaching an editor a splitting rule to get the same result.
+
+    The 01/02 in the margin is not stored; it is the row's position.
+    """
+
+    # The figure is 460x613 at a 1440 viewport and crops to fill, so this is
+    # what it takes to stay sharp on a 2x screen. Worth stating plainly: the
+    # two photos seeded here are 375x560, which the frame already upscales.
+    PHOTO_SIZE = (920, 1226)
+
+    first_name = models.CharField(max_length=40, help_text="Set in roman, e.g. “Aditi”.")
+    last_name = models.CharField(
+        max_length=40,
+        help_text="Set in the orange italic beneath the given name, e.g. “Singh”.",
+    )
+    role = models.CharField(max_length=60, help_text='e.g. "Managing Partner".')
+
+    photo = models.ImageField(
+        upload_to="team/",
+        blank=True,
+        help_text=(
+            f"Portrait, cropped to 3:4. Upload at least "
+            f"{PHOTO_SIZE[0]}x{PHOTO_SIZE[1]} so it stays sharp on a phone or a "
+            f"retina screen."
+        ),
+    )
+    focal_x = models.PositiveSmallIntegerField(default=50, help_text="Horizontal focus, 0-100.")
+    focal_y = models.PositiveSmallIntegerField(default=50, help_text="Vertical focus, 0-100.")
+
+    is_published = models.BooleanField(default=True, db_index=True)
+    order = models.PositiveIntegerField(default=0, db_index=True)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["order", "id"]
+        verbose_name = "team_the_partners"
+        verbose_name_plural = "team_the_partners"
+
+    def __str__(self):
+        return f"{self.first_name} {self.last_name}"
+
+    def clean(self):
+        if self.focal_x > 100 or self.focal_y > 100:
+            raise ValidationError("Focal values are percentages and cannot exceed 100.")
+
+
+class PersonLine(models.Model):
+    """One of the dashed lines under a partner's role."""
+
+    person = models.ForeignKey(Person, on_delete=models.CASCADE, related_name="lines")
+    text = models.CharField(max_length=60, help_text='e.g. "Still Life & Sports Photographer".')
+    order = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        ordering = ["order", "id"]
+        verbose_name = "line"
+        verbose_name_plural = "lines"
+
+    def __str__(self):
+        return self.text
+
+
+class PersonSocial(models.Model):
+    """
+    A partner's own account on one platform.
+
+    The platform is a choice, not a free field. The page renders the icon from
+    a CSS class -- `fab fa-instagram` -- and a class typed by hand is both a
+    broken icon waiting to happen and a raw class going straight onto the page.
+    Choosing the platform also spells the screen-reader label ("Instagram of
+    Aditi Singh"), which was written out by hand for every link before.
+
+    The five here are the platforms the site already links to. The icon class
+    itself stays in the frontend, next to the icon font that defines it.
+    """
+
+    PLATFORMS = [
+        ("instagram", "Instagram"),
+        ("youtube", "YouTube"),
+        ("linkedin", "LinkedIn"),
+        ("facebook", "Facebook"),
+        ("whatsapp", "WhatsApp"),
+    ]
+
+    person = models.ForeignKey(Person, on_delete=models.CASCADE, related_name="social")
+    platform = models.CharField(max_length=20, choices=PLATFORMS)
+    url = models.URLField(max_length=300, help_text="The full link to the profile.")
+    order = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        ordering = ["order", "id"]
+        verbose_name = "social link"
+        verbose_name_plural = "social links"
+
+    def __str__(self):
+        return f"{self.get_platform_display()} — {self.person}"

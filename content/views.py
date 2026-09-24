@@ -16,23 +16,35 @@ from django.utils.http import http_date
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
 
-from .models import AboutContent, AboutPillar, Discipline, Service, SiteSettings
+from .models import (
+    AboutContent,
+    AboutPillar,
+    Discipline,
+    Person,
+    Reason,
+    Service,
+    SiteSettings,
+    TeamContent,
+    WhyChooseContent,
+)
 from .serializers import (
     AboutContentSerializer,
     DisciplineSerializer,
     ServiceSerializer,
     SiteSettingsSerializer,
+    TeamSerializer,
+    WhyChooseSerializer,
 )
 
 
 def _last_modified():
     """The newest change across every content table, for ETag and caching."""
     stamps = []
-    for model in (SiteSettings, AboutContent):
+    for model in (SiteSettings, AboutContent, WhyChooseContent, TeamContent):
         obj = model.objects.first()
         if obj:
             stamps.append(obj.updated_at)
-    for model in (AboutPillar, Service, Discipline):
+    for model in (AboutPillar, Service, Discipline, Reason, Person):
         obj = model.objects.order_by("-updated_at").first()
         if obj:
             stamps.append(obj.updated_at)
@@ -47,6 +59,12 @@ def content(request):
     services = Service.objects.filter(is_published=True)
     disciplines = Discipline.objects.filter(is_published=True).prefetch_related(
         "videos", "images"
+    )
+    # Listed, not sliced: the reasons stack rather than tile, so there is no
+    # count the layout cannot take. The section's height follows instead.
+    reasons = list(Reason.objects.filter(is_published=True))
+    people = list(
+        Person.objects.filter(is_published=True).prefetch_related("lines", "social")
     )
     ctx = {"request": request}
 
@@ -66,6 +84,12 @@ def content(request):
         # rather than leaving the frontend to slice a list it did not size.
         "disciplines": DisciplineSerializer(
             disciplines[: Discipline.VISIBLE_TILES], many=True, context=ctx
+        ).data,
+        "why_choose": WhyChooseSerializer(
+            {"content": WhyChooseContent.load(), "reasons": reasons}, context=ctx
+        ).data,
+        "team": TeamSerializer(
+            {"content": TeamContent.load(), "people": people}, context=ctx
         ).data,
     }
 
