@@ -65,8 +65,10 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
-    # Railway runs the process and serves no static files for you, so the
-    # admin's own CSS is 404 without this. Must sit directly under Security.
+    # Serves the admin's own CSS and JS. PythonAnywhere can map static files
+    # itself, but STORAGES below fingerprints them, and without whitenoise
+    # resolving those hashed names the admin loads unstyled. Must sit directly
+    # under SecurityMiddleware.
     "whitenoise.middleware.WhiteNoiseMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     # CorsMiddleware must sit above CommonMiddleware
@@ -97,9 +99,12 @@ TEMPLATES = [
 
 
 # â”€â”€ Database â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-# DATABASE_URL drives everything. Unset falls back to SQLite so the project
-# boots on a fresh clone with nothing running; docker-compose.yml brings up
-# the Postgres this is meant to run on.
+# DATABASE_URL drives everything. Unset falls back to SQLite, which is what
+# both development and production actually run on: a fresh clone boots with
+# nothing else running, and PythonAnywhere keeps the file on a persistent
+# disk. The parser below is kept because this site's writes are a couple of
+# admin saves a day -- if that ever stops being true, point DATABASE_URL at a
+# Postgres and add `psycopg[binary]` to requirements.txt. Nothing else changes.
 #
 # Parsed with the standard library rather than adding dj-database-url:
 # IMPLEMENTATION PLAN.md fixes the dependency list, and this is eight lines.

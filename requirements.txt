@@ -4,9 +4,20 @@ djangorestframework==3.18.1
 django-cors-headers==4.9.0
 python-dotenv==1.2.3
 Pillow==12.3.0
-psycopg[binary]==3.3.6
 
-# Production serving. Railway runs the process itself and serves nothing
-# static for you, so both of these are required to deploy, not optional.
-gunicorn==26.2.0
+# Serves the admin's own CSS and JS. Required, not optional: STORAGES in
+# base.py uses whitenoise's CompressedManifestStaticFilesStorage, so the admin
+# loses its styling without this even where the host serves static itself.
 whitenoise==6.12.0
+
+# Not listed, on purpose:
+#
+#   gunicorn  — PythonAnywhere runs its own WSGI server and never invokes it.
+#               (It cannot run on Windows either, so it was never used in
+#               development.)
+#   psycopg   — the Postgres driver. Nothing runs Postgres yet: production is
+#               SQLite on PythonAnywhere's persistent disk, and development
+#               leaves DATABASE_URL unset, which falls back to SQLite too.
+#
+# Moving to Postgres means adding `psycopg[binary]` back here and pointing
+# DATABASE_URL at it. Nothing else changes: base.py parses the URL either way.

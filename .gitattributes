@@ -1,6 +1,7 @@
-# Railway and Docker read these on Linux. A CRLF Procfile makes the start
-# command end in \r and fail with "command not found"; Python and config
-# files are normalised for the same reason.
+# The server reads these on Linux; development happens on Windows. A file
+# checked out with CRLF and then executed there breaks in ways that are hard
+# to see -- a shell line ending in \r fails with "command not found" -- so
+# everything textual is normalised to LF in the repository.
 * text=auto eol=lf
 *.png binary
 *.jpg binary

@@ -1,7 +1,36 @@
+# ── Python ──────────────────────────────────────────────────
 .venv/
 __pycache__/
 *.py[cod]
+
+# ── Secrets ─────────────────────────────────────────────────
+# .env.example stays tracked: it documents which variables a
+# deploy needs, without carrying any of their values.
 .env
+.env.*
+!.env.example
+
+# ── Local data and build output ─────────────────────────────
+# db.sqlite3 is the development database. Production runs on
+# Postgres, and committing a local copy would mean a deploy
+# could quietly ship one developer's test rows.
 db.sqlite3
+
+# Uploads live on the host's disk, not in the repo.
 media/
+
+# Written by collectstatic at build time.
 staticfiles/
+
+# ── Planning notes, not part of the app ─────────────────────
+# Written while working out what to build. They are not code,
+# they go stale as the code moves, and nothing imports them.
+BACKEND-PLAN.md
+IMPLEMENTATION PLAN.md
+
+# ── Editor & OS ─────────────────────────────────────────────
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+*.swp

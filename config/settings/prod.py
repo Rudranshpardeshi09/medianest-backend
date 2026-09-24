@@ -16,7 +16,9 @@ if not ALLOWED_HOSTS:
 if not CORS_ALLOWED_ORIGINS:
     raise RuntimeError("CORS_ALLOWED_ORIGINS must be set in production")
 
-# Behind a TLS-terminating proxy (Railway / Render / Fly all do this)
+# Behind a TLS-terminating proxy. PythonAnywhere terminates HTTPS at its own
+# front end and passes X-Forwarded-Proto through, so without this Django sees
+# every request as plain HTTP and the redirect below would loop.
 SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 SECURE_SSL_REDIRECT = True
 SESSION_COOKIE_SECURE = True
