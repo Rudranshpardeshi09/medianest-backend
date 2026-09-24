@@ -16,11 +16,15 @@ from rest_framework import serializers
 from .models import (
     AboutContent,
     AboutPillar,
+    Client,
+    FooterContent,
+    SocialLink,
     Discipline,
     Person,
     Reason,
     Service,
     SiteSettings,
+    Testimonial,
     number_word,
 )
 
@@ -30,6 +34,11 @@ class SiteSettingsSerializer(serializers.ModelSerializer):
         model = SiteSettings
         fields = [
             "tagline",
+            "firm_name",
+            "email",
+            "phone_display",
+            "phone_e164",
+            "whatsapp_message",
             "years_of_practice",
             "discipline_count",
             "discipline_count_word",
@@ -202,3 +211,81 @@ class TeamSerializer(serializers.Serializer):
 
     def get_people(self, obj):
         return PersonSerializer(obj["people"], many=True, context=self.context).data
+
+
+class TestimonialSerializer(serializers.ModelSerializer):
+    photo = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Testimonial
+        fields = ["quote", "name", "role", "photo"]
+
+    def get_photo(self, obj):
+        if not obj.photo:
+            return None
+        request = self.context.get("request")
+        return request.build_absolute_uri(obj.photo.url) if request else obj.photo.url
+
+
+class ClientSerializer(serializers.ModelSerializer):
+    logo = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Client
+        fields = ["name", "sector", "logo", "url"]
+
+    def get_logo(self, obj):
+        if not obj.logo:
+            return None
+        request = self.context.get("request")
+        return request.build_absolute_uri(obj.logo.url) if request else obj.logo.url
+
+
+class ClientsSerializer(serializers.Serializer):
+    heading = serializers.SerializerMethodField()
+    note = serializers.SerializerMethodField()
+    items = serializers.SerializerMethodField()
+
+    def get_heading(self, obj):
+        return obj["content"].heading
+
+    def get_note(self, obj):
+        return obj["content"].note
+
+    def get_items(self, obj):
+        return ClientSerializer(obj["items"], many=True, context=self.context).data
+
+
+class ContactSerializer(serializers.Serializer):
+    """
+    The invitation copy. `{hours}` is resolved here rather than in the
+    browser, so the page is handed a finished sentence and the working hours
+    have exactly one source.
+    """
+
+    heading = serializers.SerializerMethodField()
+    lede = serializers.SerializerMethodField()
+
+    def get_heading(self, obj):
+        return obj["content"].heading
+
+    def get_lede(self, obj):
+        return obj["content"].lede.replace("{hours}", obj["settings"].hours_spaced)
+
+
+class SocialLinkSerializer(serializers.ModelSerializer):
+    """
+    `url` is sent as stored, so WhatsApp arrives empty. The page builds that
+    one from the phone number -- the same place the tap-to-call link comes
+    from -- rather than it being written out and left to go stale.
+    """
+
+    class Meta:
+        model = SocialLink
+        fields = ["platform", "url"]
+
+
+class FooterSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = FooterContent
+        fields = ["blurb", "legal_note"]

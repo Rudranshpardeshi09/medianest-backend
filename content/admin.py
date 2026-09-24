@@ -12,6 +12,7 @@ Two habits run through it:
     than relying on a note nobody reads.
 """
 
+import math
 import re
 
 from django.contrib import admin, messages
@@ -22,19 +23,26 @@ from django.utils.safestring import mark_safe
 
 from .models import (
     MAX_COMFORTABLE_REASONS,
-    Person,
-    PersonLine,
-    PersonSocial,
-    TeamContent,
     SERVICE_STRIP_COLUMNS,
     AboutContent,
     AboutPillar,
+    Client,
+    ClientsContent,
+    ContactContent,
+    ClientsContent,
     Discipline,
     DisciplineImage,
     DisciplineVideo,
+    FooterContent,
+    Person,
+    PersonLine,
+    PersonSocial,
     Reason,
     Service,
     SiteSettings,
+    SocialLink,
+    TeamContent,
+    Testimonial,
     WhyChooseContent,
     number_word,
 )
@@ -83,6 +91,18 @@ class SingletonAdmin(admin.ModelAdmin):
 class SiteSettingsAdmin(SingletonAdmin):
     fieldsets = (
         ("Brand", {"fields": ("tagline",)}),
+        (
+            "How to reach us",
+            {
+                "fields": ("firm_name", "email", ("phone_display", "phone_e164"), "whatsapp_message"),
+                "description": (
+                    "Printed by the contact panel, the footer and the mobile "
+                    "menu. The number is stored twice on purpose: once as it "
+                    "should read, once as it must be dialled — the tap-to-call "
+                    "and WhatsApp links are built from the second."
+                ),
+            },
+        ),
         (
             "The firm's figures",
             {
@@ -574,3 +594,225 @@ class PersonAdmin(admin.ModelAdmin):
                 level=messages.WARNING,
             )
         return super().changelist_view(request, extra_context)
+
+
+@admin.register(Testimonial)
+class TestimonialAdmin(admin.ModelAdmin):
+    list_display = ("position", "name", "role", "length", "is_published", "order")
+    list_editable = ("order", "is_published")
+    list_filter = ("is_published",)
+    search_fields = ("name", "role", "quote")
+    ordering = ("order", "id")
+
+    fieldsets = (
+        (
+            "Quote",
+            {
+                "fields": ("quote",),
+                "description": (
+                    "The carousel's box is sized for the character limit, so "
+                    "paging between quotes moves nothing. Going over is refused "
+                    "rather than allowed to shift the page."
+                ),
+            },
+        ),
+        ("Who said it", {"fields": ("name", "role")}),
+        ("Portrait", {"fields": ("photo", "preview")}),
+        ("Listing", {"fields": (("order", "is_published"),)}),
+    )
+    readonly_fields = ("preview",)
+
+    @admin.display(description="#")
+    def position(self, obj):
+        ids = list(Testimonial.objects.filter(is_published=True).values_list("id", flat=True))
+        return f"{ids.index(obj.id) + 1:02d}" if obj.id in ids else "--"
+
+    @admin.display(description="Length")
+    def length(self, obj):
+        used, cap = len(obj.quote), Testimonial.LIMIT
+        colour = "#c00" if used > cap else "#c93" if used > cap * 0.9 else "#666"
+        return mark_safe(f'<span style="color:{colour}">{used}/{cap}</span>')
+
+    @admin.display(description="As it will appear")
+    def preview(self, obj):
+        if not obj or not obj.photo:
+            return "Upload a portrait to see it as the page crops it."
+        need = Testimonial.PHOTO_SIZE
+        if obj.photo.width < need[0] or obj.photo.height < need[1]:
+            note = format_html(
+                '<p style="margin:6px 0 0;color:#c93">This photo is {}×{}. It is shown '
+                'as a {}px circle, so it needs {}×{} to stay sharp on a retina screen.</p>',
+                obj.photo.width, obj.photo.height, need[0] // 2, need[0], need[1],
+            )
+        else:
+            note = mark_safe('<p style="margin:6px 0 0;color:#484">Large enough.</p>')
+        return format_html(
+            '<div style="width:62px;height:62px;border-radius:50%;overflow:hidden;'
+            'border:1px solid #ccc"><img src="{}" style="width:100%;height:100%;'
+            'object-fit:cover"></div>{}',
+            obj.photo.url, note,
+        )
+
+    def changelist_view(self, request, extra_context=None):
+        n = Testimonial.objects.filter(is_published=True).count()
+        if n == 0:
+            self.message_user(
+                request,
+                "No published testimonials, so the whole section is left off the "
+                "page. An empty carousel reads as broken rather than as absent.",
+                level=messages.WARNING,
+            )
+        elif n == 1:
+            self.message_user(
+                request,
+                "One published testimonial. The arrows and dots still draw, but "
+                "there is nothing to page to and the auto-advance stays off.",
+                level=messages.INFO,
+            )
+        return super().changelist_view(request, extra_context)
+
+
+@admin.register(ClientsContent)
+class ClientsContentAdmin(SingletonAdmin):
+    fields = ("heading", "note")
+    readonly_fields = ("updated_at",)
+
+
+@admin.register(Client)
+class ClientAdmin(admin.ModelAdmin):
+    list_display = ("position", "name", "sector", "mark", "links", "is_published", "order")
+    list_editable = ("order", "is_published")
+    list_filter = ("is_published",)
+    search_fields = ("name", "sector")
+    ordering = ("order", "id")
+
+    fieldsets = (
+        ("Organisation", {"fields": ("name", "sector")}),
+        (
+            "Mark",
+            {
+                "fields": ("logo", "preview"),
+                "description": (
+                    "Contained in a fixed box rather than cropped, so marks of "
+                    "very different proportions still line up across the row."
+                ),
+            },
+        ),
+        ("Link", {"fields": ("url",)}),
+        ("Listing", {"fields": (("order", "is_published"),)}),
+    )
+    readonly_fields = ("preview",)
+
+    @admin.display(description="#")
+    def position(self, obj):
+        ids = list(Client.objects.filter(is_published=True).values_list("id", flat=True))
+        return f"{ids.index(obj.id) + 1:02d}" if obj.id in ids else "--"
+
+    @admin.display(description="Mark")
+    def mark(self, obj):
+        if not obj.logo:
+            return mark_safe('<span style="color:#c93">none</span>')
+        return format_html(
+            '<img src="{}" style="height:26px;width:auto;max-width:60px;object-fit:contain">',
+            obj.logo.url,
+        )
+
+    @admin.display(description="Link")
+    def links(self, obj):
+        return mark_safe(
+            '<span style="color:#666">opens in a new tab</span>'
+            if obj.url
+            else '<span style="color:#888">not clickable</span>'
+        )
+
+    @admin.display(description="As the card will show it")
+    def preview(self, obj):
+        if not obj or not obj.logo:
+            return "Upload a mark to see it at the size the card uses."
+        need = Client.LOGO_SIZE
+        if obj.logo.width < need[0] or obj.logo.height < need[1]:
+            note = format_html(
+                '<p style="margin:6px 0 0;color:#c93">This mark is {}×{}. It needs '
+                '{}×{} to stay sharp on a retina screen.</p>',
+                obj.logo.width, obj.logo.height, need[0], need[1],
+            )
+        else:
+            note = mark_safe('<p style="margin:6px 0 0;color:#484">Large enough.</p>')
+        return format_html(
+            '<div style="width:100%;max-width:200px;height:74px;display:grid;'
+            'place-items:center;border:1px solid #ccc;background:#fff">'
+            '<img src="{}" style="max-width:76px;max-height:68px;width:auto;'
+            'height:auto;object-fit:contain"></div>{}',
+            obj.logo.url, note,
+        )
+
+    def changelist_view(self, request, extra_context=None):
+        n = Client.objects.filter(is_published=True).count()
+        short = [c for c in Client.GRID_COLUMNS if n % c]
+        if n and short:
+            fills = Client.GRID_COLUMNS[0]
+            for c in Client.GRID_COLUMNS[1:]:
+                fills = fills * c // math.gcd(fills, c)
+            lower, upper = (n // fills) * fills, ((n // fills) + 1) * fills
+            self.message_user(
+                request,
+                f"{n} published. The grid is "
+                f"{', '.join(str(c) for c in Client.GRID_COLUMNS)} columns wide as "
+                f"the screen narrows, so the last row is part empty at "
+                f"{', '.join(str(c) for c in short)} columns. "
+                f"{lower or fills} or {upper} would fill every row at every width.",
+                level=messages.INFO,
+            )
+        return super().changelist_view(request, extra_context)
+
+
+@admin.register(ContactContent)
+class ContactContentAdmin(SingletonAdmin):
+    fields = ("heading", "lede", "rendered")
+    readonly_fields = ("rendered", "updated_at")
+
+    @admin.display(description="As the page will read it")
+    def rendered(self, obj):
+        if not obj:
+            return "—"
+        hours = SiteSettings.load().hours_spaced
+        head, accent, tail = obj.heading, "", ""
+        if obj.heading.count("*") == 2:
+            head, accent, tail = re.split(r"\*(.+?)\*", obj.heading, maxsplit=1)
+        return format_html(
+            '<p style="font-size:17px;margin:0">{}<em style="color:#e95523">{}</em>{}</p>'
+            '<p style="margin:8px 0 0">{}</p>',
+            head, accent, tail, obj.lede.replace("{hours}", hours),
+        )
+
+
+@admin.register(FooterContent)
+class FooterContentAdmin(SingletonAdmin):
+    fields = ("blurb", "legal_note", "bottom_line")
+    readonly_fields = ("bottom_line", "updated_at")
+
+    @admin.display(description="The bottom line reads")
+    def bottom_line(self, obj):
+        if not obj:
+            return "—"
+        from datetime import date
+
+        return f"© {date.today().year} {SiteSettings.load().firm_name}. {obj.legal_note}"
+
+
+@admin.register(SocialLink)
+class SocialLinkAdmin(admin.ModelAdmin):
+    list_display = ("platform", "target", "is_published", "order")
+    list_editable = ("order", "is_published")
+    ordering = ("order", "id")
+    fields = ("platform", "url", ("order", "is_published"))
+
+    @admin.display(description="Goes to")
+    def target(self, obj):
+        if obj.platform == "whatsapp":
+            s = SiteSettings.load()
+            return mark_safe(
+                f'<span style="color:#666">built from the phone number — '
+                f"{s.phone_e164}</span>"
+            )
+        return obj.url or mark_safe('<span style="color:#c00">missing</span>')

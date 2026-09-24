@@ -19,20 +19,31 @@ from rest_framework.response import Response
 from .models import (
     AboutContent,
     AboutPillar,
+    Client,
+    ClientsContent,
+    ContactContent,
+    FooterContent,
     Discipline,
     Person,
     Reason,
     Service,
     SiteSettings,
+    SocialLink,
     TeamContent,
+    Testimonial,
     WhyChooseContent,
 )
 from .serializers import (
     AboutContentSerializer,
+    ClientsSerializer,
+    ContactSerializer,
+    FooterSerializer,
+    SocialLinkSerializer,
     DisciplineSerializer,
     ServiceSerializer,
     SiteSettingsSerializer,
     TeamSerializer,
+    TestimonialSerializer,
     WhyChooseSerializer,
 )
 
@@ -40,11 +51,11 @@ from .serializers import (
 def _last_modified():
     """The newest change across every content table, for ETag and caching."""
     stamps = []
-    for model in (SiteSettings, AboutContent, WhyChooseContent, TeamContent):
+    for model in (SiteSettings, AboutContent, WhyChooseContent, TeamContent, ClientsContent, ContactContent, FooterContent):
         obj = model.objects.first()
         if obj:
             stamps.append(obj.updated_at)
-    for model in (AboutPillar, Service, Discipline, Reason, Person):
+    for model in (AboutPillar, Service, Discipline, Reason, Person, Testimonial, Client, SocialLink):
         obj = model.objects.order_by("-updated_at").first()
         if obj:
             stamps.append(obj.updated_at)
@@ -90,6 +101,25 @@ def content(request):
         ).data,
         "team": TeamSerializer(
             {"content": TeamContent.load(), "people": people}, context=ctx
+        ).data,
+        "testimonials": TestimonialSerializer(
+            Testimonial.objects.filter(is_published=True), many=True, context=ctx
+        ).data,
+        "clients": ClientsSerializer(
+            {
+                "content": ClientsContent.load(),
+                "items": Client.objects.filter(is_published=True),
+            },
+            context=ctx,
+        ).data,
+        "contact": ContactSerializer(
+            {"content": ContactContent.load(), "settings": settings_obj}, context=ctx
+        ).data,
+        "footer": FooterSerializer(FooterContent.load(), context=ctx).data,
+        # Top level, not under `footer`: the header's mobile menu shows these
+        # too, so they belong to the firm rather than to a section.
+        "social": SocialLinkSerializer(
+            SocialLink.objects.filter(is_published=True), many=True, context=ctx
         ).data,
     }
 

@@ -9,7 +9,7 @@ Built so far: Site settings, About.
 """
 
 from django.core.exceptions import ValidationError
-from django.core.validators import MaxLengthValidator, RegexValidator
+from django.core.validators import MaxLengthValidator, RegexValidator, URLValidator
 from django.db import models
 
 
@@ -89,6 +89,48 @@ class SiteSettings(Singleton):
         max_length=40,
         default="Global",
         help_text='Where the firm works: "Global".',
+    )
+
+    # How to reach the firm. These live here rather than in the Contact
+    # section's own record because three components print them -- Contact, the
+    # footer, and the header's mobile menu -- and the footer also builds a
+    # WhatsApp link around the number. Kept in one place, changing the phone
+    # is one edit; kept per section it was four, one of them URL-encoded
+    # inside a link.
+    firm_name = models.CharField(
+        max_length=80,
+        default="Media Nest",
+        help_text="The legal or trading name, as the contact panel prints it.",
+    )
+    email = models.EmailField(
+        default="connect@medianest.co.in",
+        help_text="Shown and linked in the contact panel, the footer and the mobile menu.",
+    )
+    phone_display = models.CharField(
+        max_length=32,
+        default="+91-8448112770",
+        help_text='As it should read on the page, punctuation and all: "+91-8448112770".',
+    )
+    phone_e164 = models.CharField(
+        max_length=20,
+        default="+918448112770",
+        validators=[
+            RegexValidator(
+                r"^\+[1-9]\d{7,14}$",
+                "Write it as a plus, the country code and the number, with no "
+                "spaces or dashes: +918448112770.",
+            )
+        ],
+        help_text=(
+            "The dialable form. Both the tap-to-call link and the WhatsApp "
+            "link are built from this, so it has to be the bare international "
+            "number."
+        ),
+    )
+    whatsapp_message = models.CharField(
+        max_length=200,
+        default="Hi, I visited your website and want to know more.",
+        help_text="Pre-filled in the WhatsApp chat the footer icon opens.",
     )
 
     updated_at = models.DateTimeField(auto_now=True)
@@ -695,6 +737,18 @@ class PersonLine(models.Model):
         return self.text
 
 
+# The platforms the site links to, for a partner's own account and for the
+# firm's. One list: the icon each maps to lives in the frontend beside the
+# font that draws it, and two lists here would let the two drift.
+SOCIAL_PLATFORMS = [
+    ("instagram", "Instagram"),
+    ("youtube", "YouTube"),
+    ("linkedin", "LinkedIn"),
+    ("facebook", "Facebook"),
+    ("whatsapp", "WhatsApp"),
+]
+
+
 class PersonSocial(models.Model):
     """
     A partner's own account on one platform.
@@ -709,16 +763,8 @@ class PersonSocial(models.Model):
     itself stays in the frontend, next to the icon font that defines it.
     """
 
-    PLATFORMS = [
-        ("instagram", "Instagram"),
-        ("youtube", "YouTube"),
-        ("linkedin", "LinkedIn"),
-        ("facebook", "Facebook"),
-        ("whatsapp", "WhatsApp"),
-    ]
-
     person = models.ForeignKey(Person, on_delete=models.CASCADE, related_name="social")
-    platform = models.CharField(max_length=20, choices=PLATFORMS)
+    platform = models.CharField(max_length=20, choices=SOCIAL_PLATFORMS)
     url = models.URLField(max_length=300, help_text="The full link to the profile.")
     order = models.PositiveIntegerField(default=0)
 
@@ -729,3 +775,299 @@ class PersonSocial(models.Model):
 
     def __str__(self):
         return f"{self.get_platform_display()} — {self.person}"
+
+
+class Testimonial(models.Model):
+    """
+    One quote in the carousel.
+
+    **The count is free.** It is a carousel, not a grid: one testimonial simply
+    disables the auto-advance (the component already guards on `count < 2`),
+    and the dots below are drawn from the list.
+
+    The quote has a hard limit because the stage does. The carousel used to
+    size itself to whatever was in it -- a floor of 300px that grew -- so the
+    two quotes measured 311px and 380px and the section grew 68px every nine
+    seconds as it advanced itself, carrying the whole page below it. The stage
+    is now fixed to hold LIMIT characters at every width; a quote past that
+    would start the shifting again, which is why this is validated rather than
+    suggested.
+    """
+
+    # Measured on the rendered stage at seven widths. 260 characters fits with
+    # room to spare everywhere; the tightest case is a 390px phone, where it
+    # needs 342px of a 370px box.
+    LIMIT = 260
+
+    # 62x62 on the page, so twice that on a retina screen.
+    PHOTO_SIZE = (124, 124)
+
+    quote = models.TextField(
+        max_length=LIMIT,
+        # TextField's max_length only sizes the admin's textarea; unlike a
+        # CharField it is enforced neither by validation nor by the database.
+        validators=[MaxLengthValidator(LIMIT)],
+        help_text=(
+            f"Up to {LIMIT} characters. The carousel's box is sized for exactly "
+            f"this, so that paging between quotes moves nothing on the page."
+        ),
+    )
+    name = models.CharField(max_length=80)
+    role = models.CharField(
+        max_length=120,
+        help_text='Their title and organisation, e.g. "President, Pan American Billiards & Snooker Association".',
+    )
+    photo = models.ImageField(
+        upload_to="testimonials/",
+        blank=True,
+        help_text=(
+            f"Shown as a {PHOTO_SIZE[0] // 2}px circle, so upload at least "
+            f"{PHOTO_SIZE[0]}x{PHOTO_SIZE[1]}. A square crops best."
+        ),
+    )
+
+    is_published = models.BooleanField(default=True, db_index=True)
+    order = models.PositiveIntegerField(default=0, db_index=True)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["order", "id"]
+        verbose_name = "team_in_their_words"
+        verbose_name_plural = "team_in_their_words"
+
+    def __str__(self):
+        return f"{self.name} — {self.quote[:40]}"
+
+
+class ClientsContent(Singleton):
+    """
+    The copy above the client cards.
+
+    No `{count}` here, unlike the Why Choose and Team headings: this section
+    prints its number in a separate counter beside the grid, which is already
+    derived from the list.
+    """
+
+    heading = models.CharField(
+        max_length=160,
+        default="Federations, institutions and *enterprises*.",
+        help_text="Wrap one word or phrase in *asterisks* to set it in the orange italic.",
+    )
+    note = models.TextField(
+        default=(
+            "The organisations we produce for, across sport, energy and public "
+            "enterprise. Together we create stories that move people and build "
+            "lasting impact."
+        ),
+        help_text="The paragraph to the right of the heading.",
+    )
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "clients_trusted_by_heading"
+        verbose_name_plural = "clients_trusted_by_heading"
+
+    def __str__(self):
+        return self.heading
+
+    def clean(self):
+        super().clean()
+        if self.heading.count("*") not in (0, 2):
+            raise ValidationError(
+                {"heading": "Accent marks come in pairs: *one word* between two asterisks."}
+            )
+
+
+class Client(models.Model):
+    """
+    One organisation in the grid.
+
+    **The count is free**, with a caveat worth knowing rather than enforcing.
+    The grid is four columns wide, three between 821 and 1180px, and two below
+    that, so the number that fills every row at every width is a multiple of
+    twelve. Eight -- what the site ships with -- fills the four- and two-column
+    layouts and leaves one cell short in the three-column one.
+
+    That is not the hole an unfilled About pillar leaves. These are separate
+    cards rather than a tessellation, so a short last row reads as a list that
+    ended, not as a layout that broke. The admin says which counts fill it and
+    leaves the choice alone.
+
+    The 01/02 under each card is the row's position, not a stored field.
+    """
+
+    # Columns at each breakpoint, widest first. Their lowest common multiple is
+    # what fills every row at every width.
+    GRID_COLUMNS = (4, 3, 2)
+
+    # The mark sits in a 74px box and is contained, not cropped, at up to
+    # 76x68 -- so twice that to stay sharp on a retina screen. Contained, so
+    # no focal point: a logo is never cut.
+    LOGO_SIZE = (152, 136)
+
+    name = models.CharField(max_length=60, help_text='As printed on the card, e.g. "Indian Oil".')
+    sector = models.CharField(
+        max_length=60,
+        help_text=(
+            'What the organisation is, not a claim about the work — '
+            '"International Federation", "Energy".'
+        ),
+    )
+    logo = models.ImageField(
+        upload_to="clients/",
+        blank=True,
+        help_text=(
+            f"Shown at up to 76x68 and never cropped, so upload at least "
+            f"{LOGO_SIZE[0]}x{LOGO_SIZE[1]}. Transparent or white background."
+        ),
+    )
+    url = models.URLField(
+        max_length=300,
+        blank=True,
+        # URLField allows ftp and ftps by default. This one becomes an
+        # external link that opens in a new tab, so only the web schemes.
+        validators=[URLValidator(schemes=["http", "https"])],
+        help_text=(
+            "Optional. With a link the card opens it in a new tab and shows the "
+            "arrow badge; without one it is still shown, just not clickable."
+        ),
+    )
+
+    is_published = models.BooleanField(default=True, db_index=True)
+    order = models.PositiveIntegerField(default=0, db_index=True)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["order", "id"]
+        verbose_name = "clients_trusted_by"
+        verbose_name_plural = "clients_trusted_by"
+
+    def __str__(self):
+        return self.name
+
+
+class ContactContent(Singleton):
+    """
+    The invitation above the enquiry form.
+
+    The lede carries a `{hours}` placeholder for the same reason the other
+    headings carry `{count}`: it says "every day, 24 x 7", which is a figure
+    About and the footer also print. Written out here it would be a fourth
+    copy to keep in step.
+
+    The form itself is not editable. Its labels, validation messages and
+    status line are interface copy rather than content -- they are wired to
+    behaviour, they have to stay in step with what the fields actually check,
+    and nothing is gained by letting them drift.
+    """
+
+    heading = models.CharField(
+        max_length=160,
+        default="Let us make your brand look *inevitable*.",
+        help_text="Wrap one word or phrase in *asterisks* to set it in the orange italic.",
+    )
+    lede = models.TextField(
+        default=(
+            "Tell us what you are building. We reply within one working day — "
+            "every day, {hours}."
+        ),
+        help_text=(
+            "Use {hours} where the working hours should go — it is filled from "
+            "Site settings so this cannot disagree with the rest of the page."
+        ),
+    )
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "contact_start_a_project"
+        verbose_name_plural = "contact_start_a_project"
+
+    def __str__(self):
+        return self.heading
+
+    def clean(self):
+        super().clean()
+        if self.heading.count("*") not in (0, 2):
+            raise ValidationError(
+                {"heading": "Accent marks come in pairs: *one word* between two asterisks."}
+            )
+
+
+class FooterContent(Singleton):
+    """
+    The footer's own copy.
+
+    The firm's name is not here -- the wordmark, the contact panel and the
+    copyright line all take it from Site settings, so it is written once.
+
+    The blurb reads close to the hero's description on purpose; they are two
+    separately written sentences that share a phrase, not one fact stated
+    twice, so editing this one cannot make the hero wrong.
+    """
+
+    blurb = models.TextField(
+        default=(
+            "Brand Image Management & Consultancy. Creating and curating "
+            "impactful visual content that amplifies brand presence and identity."
+        ),
+        help_text="The paragraph under the logo.",
+    )
+    legal_note = models.CharField(
+        max_length=120,
+        default="All rights reserved.",
+        help_text=(
+            "Follows the year and the firm's name on the bottom line. The "
+            "“© 2026 Media Nest.” part is built from the clock and Site "
+            "settings, so it cannot go stale."
+        ),
+    )
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "footer"
+        verbose_name_plural = "footer"
+
+    def __str__(self):
+        return "Footer"
+
+
+class SocialLink(models.Model):
+    """
+    One of the firm's own accounts.
+
+    Two places show these -- the footer and the header's mobile menu -- so
+    they sit beside the firm's other facts rather than under either section.
+    The menu used to carry its own list of four, which meant changing an
+    account updated the footer and left the menu pointing at the old one.
+
+    WhatsApp is the exception to the URL: its link is built from the phone
+    number in Site settings rather than stored, so a changed number cannot
+    leave a chat link behind. Leave the URL blank for it.
+    """
+
+    platform = models.CharField(max_length=20, choices=SOCIAL_PLATFORMS, unique=True)
+    url = models.URLField(
+        max_length=300,
+        blank=True,
+        validators=[URLValidator(schemes=["http", "https"])],
+        help_text="Leave blank for WhatsApp — that link is built from the phone number.",
+    )
+    is_published = models.BooleanField(default=True, db_index=True)
+    order = models.PositiveIntegerField(default=0, db_index=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["order", "id"]
+        verbose_name = "social link"
+        verbose_name_plural = "social links"
+
+    def __str__(self):
+        return self.get_platform_display()
+
+    def clean(self):
+        if self.platform != "whatsapp" and not self.url:
+            raise ValidationError({"url": "A link is required for every platform but WhatsApp."})

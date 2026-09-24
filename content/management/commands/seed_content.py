@@ -19,6 +19,10 @@ from django.core.management.base import BaseCommand
 from content.models import (
     AboutContent,
     AboutPillar,
+    Client,
+    ClientsContent,
+    ContactContent,
+    FooterContent,
     Discipline,
     DisciplineImage,
     DisciplineVideo,
@@ -28,7 +32,9 @@ from content.models import (
     Reason,
     Service,
     SiteSettings,
+    SocialLink,
     TeamContent,
+    Testimonial,
     WhyChooseContent,
 )
 
@@ -139,6 +145,55 @@ REASONS = [
     },
 ]
 
+# Copied from src/components/Footer.jsx SOCIAL. WhatsApp carries no URL:
+# the footer builds it from the phone number in Site settings.
+SOCIAL = [
+    ("facebook", "https://www.facebook.com/medianest2024"),
+    ("instagram", "https://www.instagram.com/medianest.official/"),
+    ("whatsapp", ""),
+    ("youtube", "https://youtube.com/@medianesttv?feature=shared"),
+    ("linkedin", "https://www.linkedin.com/company/104838310/"),
+]
+
+# Copied from src/components/Clients.jsx CLIENTS. `sector` is what the
+# organisation is, not a claim about the work.
+CLIENTS = [
+    ("IBSF", "International Federation", "IBSF-Logo.webp", "https://www.instagram.com/ibsf.media/"),
+    ("ACBS", "Asian Confederation", "ACBS-LOGO.webp", "https://www.instagram.com/acbsmedia/"),
+    ("PABSA", "Pan American Association", "PABSA-LOGO.webp", "https://www.instagram.com/pabsaofficial/"),
+    ("OGQ", "Olympic Gold Quest", "OGQ_logo_dark.webp", "https://www.ogq.org"),
+    ("Indian Oil", "Energy", "indianoil.webp", "https://iocl.com"),
+    ("Oil India", "Energy", "OIL.webp", "https://www.oil-india.com"),
+    ("PSPB", "Sports Promotion Board", "PSPB-Logo-White-Background.webp", "https://www.instagram.com/pspblive/"),
+    ("Cue Sports India", "National Federation", "CSI-Logo-Round-1.webp", "https://www.instagram.com/cuesportsindia/"),
+]
+CLIENTS = [dict(zip(("name", "sector", "logo", "url"), row)) for row in CLIENTS]
+
+# Copied from src/components/Testimonials.jsx QUOTES.
+TESTIMONIALS = [
+    {
+        "quote": (
+            "MediaNest helps power PABSA, bringing billiards and snooker to the "
+            "forefront in the Americas. We extend best wishes for their continued "
+            "growth and success."
+        ),
+        "name": "Ajeya Prabhakar",
+        "role": "President, Pan American Billiards & Snooker Association",
+        "photo": "ajeya-1.webp",
+    },
+    {
+        "quote": (
+            "I extend my best wishes to the Media Nest team for continued success "
+            "and creative excellence. As you lead the way in brand image management, "
+            "may your innovative ideas keep inspiring brilliance and leaving a "
+            "lasting impact on the brands you collaborate with."
+        ),
+        "name": "SPS Kalra",
+        "role": "Fashion & Cinematic Photographer",
+        "photo": "spskalra.webp",
+    },
+]
+
 # Copied from src/components/Team.jsx FOUNDERS. The icon classes are not
 # carried over -- the platform key is stored and the frontend owns the class.
 #
@@ -223,6 +278,23 @@ DISCIPLINES = [
 ]
 
 
+def _clear(queryset, *image_fields):
+    """
+    Delete rows and the files they own.
+
+    Django stopped removing a FileField's file when its row goes, so a re-seed
+    leaves the old images behind and the next one saves alongside them under a
+    suffixed name -- `ajeya-1_QJU8Hly.webp` next to `ajeya-1.webp`. Harmless
+    once, but it accumulates every time `--force` is used.
+    """
+    for row in queryset:
+        for field in image_fields:
+            f = getattr(row, field, None)
+            if f:
+                f.delete(save=False)
+    queryset.delete()
+
+
 class Command(BaseCommand):
     help = "Seed the database with the content the frontend currently hardcodes."
 
@@ -254,6 +326,10 @@ class Command(BaseCommand):
         self._seed_disciplines(force, media_dir)
         self._seed_reasons(force)
         self._seed_people(force, media_dir)
+        self._seed_testimonials(force, media_dir)
+        self._seed_clients(force, media_dir)
+        ContactContent.load()
+        self._seed_footer(force)
 
         self.stdout.write(self.style.SUCCESS("\nSeed complete."))
 
@@ -316,7 +392,7 @@ class Command(BaseCommand):
                 f"  services        : {Service.objects.count()} already present, left alone"
             )
             return
-        Service.objects.all().delete()
+        _clear(Service.objects.all(), "image")
 
         missing = []
         for i, data in enumerate(SERVICES):
@@ -349,7 +425,8 @@ class Command(BaseCommand):
                 f"  disciplines     : {Discipline.objects.count()} already present, left alone"
             )
             return
-        Discipline.objects.all().delete()
+        _clear(DisciplineImage.objects.all(), "image")
+        _clear(Discipline.objects.all(), "cover")
 
         missing = []
         films = stills = 0
@@ -413,7 +490,7 @@ class Command(BaseCommand):
                 f"  people          : {Person.objects.count()} already present, left alone"
             )
             return
-        Person.objects.all().delete()
+        _clear(Person.objects.all(), "photo")
 
         missing = []
         for i, data in enumerate(PEOPLE):
@@ -442,3 +519,72 @@ class Command(BaseCommand):
             self.stdout.write(
                 self.style.WARNING(f"                    photos not found: {', '.join(missing)}")
             )
+
+    def _seed_testimonials(self, force, media_dir):
+        if Testimonial.objects.exists() and not force:
+            self.stdout.write(
+                f"  testimonials    : {Testimonial.objects.count()} already present, left alone"
+            )
+            return
+        _clear(Testimonial.objects.all(), "photo")
+
+        missing = []
+        for i, data in enumerate(TESTIMONIALS):
+            row = Testimonial(
+                quote=data["quote"], name=data["name"], role=data["role"], order=i
+            )
+            source = media_dir / data["photo"]
+            if source.exists():
+                with source.open("rb") as fh:
+                    row.photo.save(data["photo"], File(fh), save=False)
+            else:
+                missing.append(data["photo"])
+            row.save()
+
+        longest = max(len(t["quote"]) for t in TESTIMONIALS)
+        self.stdout.write(
+            f"  testimonials    : {len(TESTIMONIALS)} created "
+            f"(longest quote {longest}/{Testimonial.LIMIT} characters)"
+        )
+        if missing:
+            self.stdout.write(
+                self.style.WARNING(f"                    photos not found: {', '.join(missing)}")
+            )
+
+    def _seed_clients(self, force, media_dir):
+        if Client.objects.exists() and not force:
+            self.stdout.write(
+                f"  clients         : {Client.objects.count()} already present, left alone"
+            )
+            return
+        _clear(Client.objects.all(), "logo")
+
+        missing = []
+        for i, data in enumerate(CLIENTS):
+            row = Client(name=data["name"], sector=data["sector"], url=data["url"], order=i)
+            source = media_dir / data["logo"]
+            if source.exists():
+                with source.open("rb") as fh:
+                    row.logo.save(data["logo"], File(fh), save=False)
+            else:
+                missing.append(data["logo"])
+            row.save()
+
+        ClientsContent.load()
+        self.stdout.write(f"  clients         : {len(CLIENTS)} created")
+        if missing:
+            self.stdout.write(
+                self.style.WARNING(f"                    logos not found: {', '.join(missing)}")
+            )
+
+    def _seed_footer(self, force):
+        FooterContent.load()
+        if SocialLink.objects.exists() and not force:
+            self.stdout.write(
+                f"  social links    : {SocialLink.objects.count()} already present, left alone"
+            )
+            return
+        SocialLink.objects.all().delete()
+        for i, (platform, url) in enumerate(SOCIAL):
+            SocialLink.objects.create(platform=platform, url=url, order=i)
+        self.stdout.write(f"  social links    : {len(SOCIAL)} created")
