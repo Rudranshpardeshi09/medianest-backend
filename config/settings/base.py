@@ -48,7 +48,9 @@ WSGI_APPLICATION = "config.wsgi.application"
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 INSTALLED_APPS = [
-    "django.contrib.admin",
+    # The admin site is subclassed so its index can say whether what is
+    # saved has been published yet. See config/admin.py.
+    "config.admin.MediaNestAdminConfig",
     "django.contrib.auth",
     "django.contrib.contenttypes",
     "django.contrib.sessions",
@@ -85,7 +87,9 @@ MIDDLEWARE = [
 TEMPLATES = [
     {
         "BACKEND": "django.template.backends.django.DjangoTemplates",
-        "DIRS": [],
+        # Ahead of the app directories, so a template here wins over the one
+        # the same-named admin template would otherwise supply.
+        "DIRS": [BASE_DIR / "templates"],
         "APP_DIRS": True,
         "OPTIONS": {
             "context_processors": [

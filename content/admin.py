@@ -36,6 +36,7 @@ from .models import (
     FooterContent,
     Person,
     PersonLine,
+    PublishState,
     PersonSocial,
     Reason,
     Service,
@@ -94,7 +95,7 @@ class SiteSettingsAdmin(SingletonAdmin):
         (
             "How to reach us",
             {
-                "fields": ("firm_name", "email", ("phone_display", "phone_e164"), "whatsapp_message"),
+                "fields": ("firm_name", "email", ("phone_display", "phone_e164"), "whatsapp_message", "admin_url"),
                 "description": (
                     "Printed by the contact panel, the footer and the mobile "
                     "menu. The number is stored twice on purpose: once as it "
@@ -816,3 +817,17 @@ class SocialLinkAdmin(admin.ModelAdmin):
                 f"{s.phone_e164}</span>"
             )
         return obj.url or mark_safe('<span style="color:#c00">missing</span>')
+
+
+@admin.register(PublishState)
+class PublishStateAdmin(SingletonAdmin):
+    """
+    Read-only. The record is written by the publish button, not by hand --
+    editing it would only make the index lie about what is live.
+    """
+
+    readonly_fields = ("last_triggered_at", "last_error")
+    fields = ("last_triggered_at", "last_error")
+
+    def has_change_permission(self, request, obj=None):
+        return False

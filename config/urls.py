@@ -11,9 +11,15 @@ from django.conf.urls.static import static
 from django.contrib import admin
 from django.urls import include, path
 
+from content.publish import publish
+
 from .settings.base import env
 
 urlpatterns = [
+    # Before admin.site.urls, which would otherwise read "publish" as an app
+    # label and answer 404. Under the admin path so it is as hard to find as
+    # the admin itself, and the view requires a logged-in staff user anyway.
+    path(f"{env('DJANGO_ADMIN_PATH', 'admin')}/publish/", publish, name="publish"),
     path(f"{env('DJANGO_ADMIN_PATH', 'admin')}/", admin.site.urls),
     path("api/", include("core.urls")),
     path("api/", include("content.urls")),

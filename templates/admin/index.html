@@ -1,0 +1,51 @@
+{% extends "admin/index.html" %}
+{% comment %}
+  Extends the admin's own index rather than replacing it: this file is found
+  first because the project template directory is ahead of the app ones, and
+  `extends` with the same name continues to the next loader.
+
+  The panel says whether an edit is actually live yet. The site is static --
+  content is baked in when Vercel builds -- so saving here changes nothing a
+  visitor sees until the site is rebuilt. That is the one thing about this
+  setup that is not obvious, so it is stated on the page people land on.
+{% endcomment %}
+
+{% block content %}
+<div class="module" style="margin-bottom:22px;padding:14px 16px">
+  <h2 style="margin:0 0 10px">Publishing</h2>
+
+  {% if unpublished %}
+    <p style="margin:0 0 12px">
+      <strong style="color:#c93">Edits are waiting.</strong>
+      The site was last built {{ published_ago }}, and content has changed since.
+      Visitors are still seeing the older version.
+    </p>
+  {% elif publish_state.last_triggered_at %}
+    <p style="margin:0 0 12px;color:#484">
+      Everything is published. Last built {{ published_ago }}.
+    </p>
+  {% else %}
+    <p style="margin:0 0 12px;color:#666">
+      The site has not been rebuilt from here yet.
+    </p>
+  {% endif %}
+
+  {% if publish_state.last_error %}
+    <p style="margin:0 0 12px;color:#c00">
+      Last attempt failed — {{ publish_state.last_error }}
+    </p>
+  {% endif %}
+
+  <form method="post" action="{% url 'publish' %}">
+    {% csrf_token %}
+    <button type="submit" class="default" style="padding:8px 16px">
+      Publish changes
+    </button>
+    <span style="margin-left:10px;color:#666">
+      Rebuilds the site with what is saved here. Takes a minute or two.
+    </span>
+  </form>
+</div>
+
+{{ block.super }}
+{% endblock %}

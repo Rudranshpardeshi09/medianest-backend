@@ -39,6 +39,7 @@ class SiteSettingsSerializer(serializers.ModelSerializer):
             "phone_display",
             "phone_e164",
             "whatsapp_message",
+            "admin_url",
             "years_of_practice",
             "discipline_count",
             "discipline_count_word",

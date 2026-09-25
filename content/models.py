@@ -127,6 +127,17 @@ class SiteSettings(Singleton):
             "number."
         ),
     )
+    admin_url = models.URLField(
+        max_length=300,
+        blank=True,
+        validators=[URLValidator(schemes=["http", "https"])],
+        help_text=(
+            "Optional. Set it and the footer shows a small “Admin” link; leave "
+            "it blank and there is no link at all. Putting one on the public "
+            "site makes the admin address public too, so only set this once "
+            "the password is a strong one."
+        ),
+    )
     whatsapp_message = models.CharField(
         max_length=200,
         default="Hi, I visited your website and want to know more.",
@@ -1071,3 +1082,27 @@ class SocialLink(models.Model):
     def clean(self):
         if self.platform != "whatsapp" and not self.url:
             raise ValidationError({"url": "A link is required for every platform but WhatsApp."})
+
+
+class PublishState(Singleton):
+    """
+    When the site was last asked to rebuild.
+
+    The frontend bakes its content in at build time, so an edit here is not
+    live until Vercel builds again. Without a record of the last trigger there
+    is no way to tell "saved but not published" from "published", and the only
+    honest answer to "is my change live?" would be to go and look.
+
+    `last_error` holds the reason a trigger failed, so a silent failure cannot
+    look like a success.
+    """
+
+    last_triggered_at = models.DateTimeField(null=True, blank=True)
+    last_error = models.TextField(blank=True)
+
+    class Meta:
+        verbose_name = "publish state"
+        verbose_name_plural = "publish state"
+
+    def __str__(self):
+        return f"last published {self.last_triggered_at or 'never'}"
